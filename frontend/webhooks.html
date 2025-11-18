@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Importer - Webhooks</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Product Importer</h1>
+            <nav>
+                <a href="/">Upload CSV</a>
+                <a href="/products.html">Products</a>
+                <a href="/webhooks.html" class="active">Webhooks</a>
+            </nav>
+        </header>
+
+        <main>
+            <section class="webhooks-section">
+                <div class="section-header">
+                    <h2>Webhook Management</h2>
+                    <div class="header-actions">
+                        <button id="createWebhookBtn" class="btn-primary">+ Create Webhook</button>
+                    </div>
+                </div>
+
+                <p class="section-description">
+                    Configure webhooks to receive notifications when specific events occur in the system.
+                </p>
+
+                <!-- Alert/Message Area -->
+                <div id="webhookAlertSection" class="alert-section hidden">
+                    <div id="webhookAlertMessage" class="alert-message"></div>
+                </div>
+
+                <!-- Test Result Area -->
+                <div id="testResultSection" class="test-result-section hidden">
+                    <div class="test-result-header">
+                        <h4>Test Result</h4>
+                        <button class="close-btn" id="closeTestResultBtn">&times;</button>
+                    </div>
+                    <div id="testResultContent" class="test-result-content"></div>
+                </div>
+
+                <!-- Webhooks Table -->
+                <div class="table-wrapper">
+                    <table class="webhooks-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Event Type</th>
+                                <th>URL</th>
+                                <th>Created At</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="webhooksTableBody">
+                            <tr>
+                                <td colspan="5" class="loading-cell">Loading webhooks...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2025 Product Importer</p>
+        </footer>
+    </div>
+
+    <!-- Webhook Modal (Create/Edit) -->
+    <div id="webhookModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="webhookModalTitle">Create Webhook</h3>
+                <button class="modal-close" id="closeWebhookModalBtn">&times;</button>
+            </div>
+            <form id="webhookForm">
+                <input type="hidden" id="webhookId">
+                
+                <div class="form-group">
+                    <label for="webhookEvent">Event Type *</label>
+                    <input 
+                        type="text" 
+                        id="webhookEvent" 
+                        required
+                        placeholder="e.g., import.completed"
+                    >
+                    <small class="form-help">
+                        Event identifier (e.g., import.completed, product.created)
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label for="webhookUrl">URL *</label>
+                    <input 
+                        type="url" 
+                        id="webhookUrl" 
+                        required
+                        placeholder="https://example.com/webhook"
+                    >
+                    <small class="form-help">
+                        The endpoint that will receive POST requests
+                    </small>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="cancelWebhookModalBtn">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Webhook</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // Initialize webhooks page when DOM is loaded
+        if (document.getElementById('webhooksTableBody')) {
+            initializeWebhooksPage();
+        }
+    </script>
+</body>
+</html>
+

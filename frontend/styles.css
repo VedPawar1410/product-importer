@@ -654,3 +654,208 @@ footer {
     }
 }
 
+/* =============================================================================
+   WEBHOOKS PAGE STYLES
+   ============================================================================= */
+
+.section-description {
+    color: #666;
+    margin-bottom: 20px;
+    font-size: 14px;
+}
+
+/* Webhooks table */
+.webhooks-table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: #fff;
+}
+
+.webhooks-table thead {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+}
+
+.webhooks-table th {
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #495057;
+    font-size: 14px;
+}
+
+.webhooks-table td {
+    padding: 12px;
+    border-bottom: 1px solid #dee2e6;
+    font-size: 14px;
+    color: #333;
+}
+
+.webhooks-table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* Event badge */
+.event-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    background-color: #e3f2fd;
+    color: #1976d2;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: 'Courier New', monospace;
+}
+
+/* URL cell */
+.url-cell {
+    max-width: 400px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.url-cell a {
+    color: #3498db;
+    text-decoration: none;
+}
+
+.url-cell a:hover {
+    text-decoration: underline;
+}
+
+/* Test button */
+.btn-test {
+    background-color: #28a745;
+    color: #fff;
+}
+
+.btn-test:hover {
+    background-color: #218838;
+}
+
+/* Form help text */
+.form-help {
+    display: block;
+    margin-top: 5px;
+    font-size: 12px;
+    color: #6c757d;
+    font-style: italic;
+}
+
+/* Test result section */
+.test-result-section {
+    margin-bottom: 20px;
+    padding: 20px;
+    border-radius: 4px;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+}
+
+.test-result-section.test-result-success {
+    background-color: #e8f5e9;
+    border-color: #4caf50;
+}
+
+.test-result-section.test-result-error {
+    background-color: #ffebee;
+    border-color: #f44336;
+}
+
+.test-result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.test-result-header h4 {
+    margin: 0;
+    font-size: 16px;
+    color: #2c3e50;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #666;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.close-btn:hover {
+    color: #333;
+}
+
+.test-result-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.test-result-item {
+    display: flex;
+    gap: 10px;
+    font-size: 14px;
+}
+
+.test-result-item strong {
+    min-width: 120px;
+    color: #495057;
+}
+
+.test-result-item pre {
+    background-color: #fff;
+    padding: 10px;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+    overflow-x: auto;
+    font-size: 12px;
+    margin: 0;
+    flex: 1;
+}
+
+.test-result-error {
+    color: #c62828;
+}
+
+.status-code {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.status-code.status-success {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.status-code.status-error {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+/* Responsive for webhooks page */
+@media (max-width: 768px) {
+    .webhooks-table {
+        min-width: 700px;
+    }
+    
+    .test-result-item {
+        flex-direction: column;
+        gap: 5px;
+    }
+    
+    .test-result-item strong {
+        min-width: auto;
+    }
+}
+
