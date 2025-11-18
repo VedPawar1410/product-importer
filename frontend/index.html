@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Importer - Upload CSV</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Product Importer</h1>
+            <nav>
+                <a href="/" class="active">Upload CSV</a>
+                <a href="/products.html">Products</a>
+                <a href="/webhooks.html">Webhooks</a>
+            </nav>
+        </header>
+
+        <main>
+            <section class="upload-section">
+                <h2>Upload Product CSV</h2>
+                <p class="instructions">Select a CSV file containing product data to import.</p>
+                
+                <div class="upload-form">
+                    <div class="file-picker-wrapper">
+                        <input type="file" id="csvFile" accept=".csv" />
+                        <label for="csvFile" class="file-label">
+                            <span id="fileName">Choose a CSV file</span>
+                        </label>
+                    </div>
+                    
+                    <button id="uploadBtn" class="btn-primary" disabled>Upload</button>
+                </div>
+
+                <div id="progressSection" class="progress-section hidden">
+                    <div class="progress-bar-container">
+                        <div id="progressBar" class="progress-bar"></div>
+                    </div>
+                    <p id="progressText" class="progress-text">0%</p>
+                </div>
+
+                <div id="statusSection" class="status-section hidden">
+                    <div id="statusMessage" class="status-message"></div>
+                    <div id="statusDetails" class="status-details"></div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2025 Product Importer</p>
+        </footer>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
+
