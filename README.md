@@ -167,9 +167,9 @@ CELERY_LOG_LEVEL: info
 
 Expected CSV columns:
 ```csv
-sku,name,description,price,active
-SKU001,Product Name,Product description,29.99,true
-SKU002,Another Product,More details,49.99,false
+sku,name,description
+SKU001,Product Name,Product description
+SKU002,Another Product,More details
 ```
 
 **Required Fields:**
@@ -178,8 +178,6 @@ SKU002,Another Product,More details,49.99,false
 
 **Optional Fields:**
 - `description` (text)
-- `price` (float)
-- `active` (boolean, default: true)
 
 ## 🐳 Docker Services
 
@@ -326,18 +324,6 @@ curl "http://localhost:8000/products?name=API&active=true"
    pool_recycle=3600
    ```
 
-## 🔒 Security Notes
-
-For production deployment:
-
-1. **Change default passwords** in docker-compose.yml
-2. **Use environment files** instead of hardcoded values
-3. **Enable SSL/TLS** for PostgreSQL and Redis
-4. **Add authentication** to API endpoints
-5. **Validate CSV input** more strictly
-6. **Rate limit** upload endpoints
-7. **Use secrets management** (Docker secrets, AWS Secrets Manager, etc.)
-
 ## 📦 Dependencies
 
 Key Python packages:
@@ -363,12 +349,6 @@ Key Python packages:
 - **Setup**: Standard Docker deployment
 - **Features**: Full control, customizable
 - **Time**: ~5 minutes
-
-### Kubernetes
-- **Guide**: `DEPLOYMENT_GUIDE.md` (K8s section)
-- **Setup**: Helm charts or manual manifests
-- **Features**: Production-grade, highly scalable
-- **Time**: ~30 minutes
 
 ## 📁 Key Files
 
@@ -410,6 +390,7 @@ For issues and questions:
 - **Bug Reports**: Create an issue on GitHub
 - **Feature Requests**: Open a discussion on GitHub
 - **API Questions**: Check `/docs` endpoint
+- **Contact me**: vedpawar1410@gmail.com
 
 ---
 
