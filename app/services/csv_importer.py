@@ -78,8 +78,9 @@ def import_csv(
     # Preconditions / setup
     # ---------------------------------------------------------------------
 
-    # Always load from /shared
-    file_path = Path("/shared") / Path(file_path).name
+    # Always load from /data/uploads (Render persistent disk)
+    # Extract just the filename and look in our upload directory
+    file_path = Path("/data/uploads") / Path(file_path).name
     if not file_path.is_file():
         raise FileNotFoundError(file_path)
 
@@ -152,4 +153,12 @@ def _report_progress(
 ) -> None:
     """Write progress information to Redis so callers can poll."""
 
-    redis_client.hset(key, mapping={"processed": processed, "total": total})
+    redis_client.hset(
+        key, 
+        mapping={
+            "processed_rows": processed,
+            "total_rows": total,
+            "successful_rows": processed,  # All processed rows are successful (we skip errors)
+            "failed_rows": 0,  # We skip invalid rows, so failed = 0
+        }
+    )

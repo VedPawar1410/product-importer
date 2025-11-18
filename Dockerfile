@@ -8,10 +8,18 @@ WORKDIR /code
 # System dependencies
 RUN apt-get update && apt-get install -y build-essential gcc && rm -rf /var/lib/apt/lists/*
 
+# Install Python dependencies
 COPY requirements.txt /code/
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
+# Copy application code
 COPY . /code
+
+# Make run script executable
+RUN chmod +x /code/run_web.sh
+
+# Create upload directory
+RUN mkdir -p /data/uploads
 
 EXPOSE 8000
 

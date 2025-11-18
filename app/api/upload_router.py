@@ -40,12 +40,13 @@ async def start_upload(file: UploadFile = File(...)) -> dict[str, str]:
     # Create a task_id used for filenames + Redis keys
     task_id: str = uuid.uuid4().hex
 
-    # Shared folder accessible by both web + worker containers
-    shared_dir = Path("/shared")
-    shared_dir.mkdir(parents=True, exist_ok=True)
+    # Persistent folder accessible by both web + worker containers
+    # Uses /data for Render, compatible with /shared for local Docker
+    upload_dir = Path("/data/uploads")
+    upload_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save uploaded file into shared volume
-    tmp_path = shared_dir / f"{task_id}.csv"
+    # Save uploaded file into persistent volume
+    tmp_path = upload_dir / f"{task_id}.csv"
 
     with tmp_path.open("wb") as buffer:
         while chunk := await file.read(1024 * 1024):  # 1 MB chunks

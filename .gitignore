@@ -59,6 +59,16 @@ celerybeat.pid
 # Temporary files
 *.csv
 /shared/
+/data/
 tmp/
 temp/
+
+# Render deployment
+.render/
+
+# Local documentation (keep project docs)
+COMPLETE_BUG_REPORT.md
+DUPLICATE_KEY_FIX.md
+FRONTEND_PROGRESS_FIX.md
+FIXES_APPLIED.md
 

@@ -1,0 +1,62 @@
+services:
+  # FastAPI Web Service
+  - type: web
+    name: product-importer-web
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: POSTGRES_URL
+        fromDatabase:
+          name: product-importer-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: product-importer-redis
+          property: connectionString
+      - key: UVICORN_WORKERS
+        value: 1
+    disk:
+      name: product-uploads
+      mountPath: /data
+      sizeGB: 1
+
+  # Celery Worker Service
+  - type: worker
+    name: product-importer-worker
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile.worker
+    envVars:
+      - key: POSTGRES_URL
+        fromDatabase:
+          name: product-importer-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: product-importer-redis
+          property: connectionString
+      - key: CELERY_CONCURRENCY
+        value: 2
+      - key: CELERY_LOG_LEVEL
+        value: info
+    disk:
+      name: product-uploads
+      mountPath: /data
+      sizeGB: 1
+
+databases:
+  # PostgreSQL Database
+  - name: product-importer-db
+    databaseName: products
+    plan: free
+
+  # Redis Instance
+  - type: redis
+    name: product-importer-redis
+    plan: free
+    maxmemoryPolicy: noeviction
+

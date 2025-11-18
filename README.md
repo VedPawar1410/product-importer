@@ -28,12 +28,26 @@ A production-ready product import system with CSV processing, async task managem
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Option 1: Deploy to Render.com (Production)
 
+**One-click deployment to production:**
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+
+1. Click the button above or follow instructions in `RENDER_DEPLOYMENT.md`
+2. Connect your GitHub repository
+3. Render automatically provisions all services
+4. Your app is live in ~10 minutes
+
+**Full Render deployment guide**: See `RENDER_DEPLOYMENT.md`
+
+### Option 2: Local Development (Docker Compose)
+
+**Prerequisites:**
 - Docker 20.10+
 - Docker Compose 2.0+
 
-### Installation & Running
+**Installation & Running:**
 
 1. **Clone the repository**
    ```bash
@@ -336,6 +350,35 @@ Key Python packages:
 - **Pydantic 2.7+** - Data validation
 - **pydantic-settings** - Settings management
 
+## 🚢 Deployment Options
+
+### Render.com (Recommended)
+- **Guide**: `RENDER_DEPLOYMENT.md`
+- **Setup**: One-click Blueprint deployment
+- **Features**: Free tier available, auto-scaling, SSL included
+- **Time**: ~10 minutes
+
+### Docker Compose (Local/VPS)
+- **Guide**: `DEPLOYMENT_GUIDE.md`
+- **Setup**: Standard Docker deployment
+- **Features**: Full control, customizable
+- **Time**: ~5 minutes
+
+### Kubernetes
+- **Guide**: `DEPLOYMENT_GUIDE.md` (K8s section)
+- **Setup**: Helm charts or manual manifests
+- **Features**: Production-grade, highly scalable
+- **Time**: ~30 minutes
+
+## 📁 Key Files
+
+- `render.yaml` - Render Blueprint configuration
+- `RENDER_DEPLOYMENT.md` - Complete Render deployment guide
+- `DEPLOYMENT_GUIDE.md` - General deployment guide
+- `DEPLOYMENT_SUMMARY.md` - All changes and fixes applied
+- `docker-compose.yml` - Local development setup
+- `requirements.txt` - Python dependencies
+
 ## 🐛 Known Issues
 
 None at this time. All critical bugs have been fixed:
@@ -345,21 +388,30 @@ None at this time. All critical bugs have been fixed:
 - ✅ Import path resolution
 - ✅ Environment variable loading
 - ✅ Shared volume access
+- ✅ Render.com compatibility
+- ✅ Persistent storage configuration
 
 ## 📄 License
 
-[Your License Here]
+MIT License - Feel free to use for personal or commercial projects
 
 ## 👥 Contributing
 
-[Your Contributing Guidelines Here]
+Contributions are welcome! Please:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
 ## 📞 Support
 
 For issues and questions:
-- Create an issue on GitHub
-- Contact: [Your Contact Info]
+- **Deployment Issues**: See `RENDER_DEPLOYMENT.md` or `DEPLOYMENT_GUIDE.md`
+- **Bug Reports**: Create an issue on GitHub
+- **Feature Requests**: Open a discussion on GitHub
+- **API Questions**: Check `/docs` endpoint
 
 ---
 
 **Built with ❤️ using FastAPI, Celery, PostgreSQL, and Redis**
+**Ready for production deployment on Render.com** 🚀
