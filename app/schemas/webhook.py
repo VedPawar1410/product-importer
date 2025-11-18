@@ -2,6 +2,7 @@ from pydantic import BaseModel
 
 
 class WebhookBase(BaseModel):
+    event: str
     url: str
 
 
