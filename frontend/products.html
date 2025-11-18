@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Importer - Products</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Product Importer</h1>
+            <nav>
+                <a href="/">Upload CSV</a>
+                <a href="/products.html" class="active">Products</a>
+                <a href="/webhooks.html">Webhooks</a>
+            </nav>
+        </header>
+
+        <main>
+            <section class="products-section">
+                <div class="section-header">
+                    <h2>Product Management</h2>
+                    <div class="header-actions">
+                        <button id="createProductBtn" class="btn-primary">+ Create Product</button>
+                        <button id="deleteAllBtn" class="btn-danger">Delete All Products</button>
+                    </div>
+                </div>
+
+                <!-- Alert/Message Area -->
+                <div id="alertSection" class="alert-section hidden">
+                    <div id="alertMessage" class="alert-message"></div>
+                </div>
+
+                <!-- Filter Bar -->
+                <div class="filter-bar">
+                    <div class="filter-group">
+                        <label for="filterSku">SKU:</label>
+                        <input type="text" id="filterSku" placeholder="Filter by SKU">
+                    </div>
+                    <div class="filter-group">
+                        <label for="filterName">Name:</label>
+                        <input type="text" id="filterName" placeholder="Filter by name">
+                    </div>
+                    <div class="filter-group">
+                        <label for="filterActive">Status:</label>
+                        <select id="filterActive">
+                            <option value="">All</option>
+                            <option value="true">Active</option>
+                            <option value="false">Inactive</option>
+                        </select>
+                    </div>
+                    <button id="applyFiltersBtn" class="btn-secondary">Apply Filters</button>
+                    <button id="clearFiltersBtn" class="btn-secondary">Clear Filters</button>
+                </div>
+
+                <!-- Products Table -->
+                <div class="table-wrapper">
+                    <table class="products-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>SKU</th>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Price</th>
+                                <th>Active</th>
+                                <th>Created At</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="productsTableBody">
+                            <tr>
+                                <td colspan="8" class="loading-cell">Loading products...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination Controls -->
+                <div class="pagination-controls">
+                    <div class="pagination-info">
+                        <span id="paginationInfo">Page 1 of 1 (0 products)</span>
+                    </div>
+                    <div class="pagination-buttons">
+                        <button id="prevPageBtn" class="btn-secondary" disabled>Previous</button>
+                        <button id="nextPageBtn" class="btn-secondary" disabled>Next</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2025 Product Importer</p>
+        </footer>
+    </div>
+
+    <!-- Product Modal (Create/Edit) -->
+    <div id="productModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Create Product</h3>
+                <button class="modal-close" id="closeModalBtn">&times;</button>
+            </div>
+            <form id="productForm">
+                <input type="hidden" id="productId">
+                
+                <div class="form-group">
+                    <label for="productSku">SKU *</label>
+                    <input type="text" id="productSku" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="productName">Name *</label>
+                    <input type="text" id="productName" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="productDescription">Description</label>
+                    <textarea id="productDescription" rows="3"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="productPrice">Price</label>
+                    <input type="number" id="productPrice" step="0.01" min="0">
+                </div>
+
+                <div class="form-group checkbox-group">
+                    <label>
+                        <input type="checkbox" id="productActive" checked>
+                        <span>Active</span>
+                    </label>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="cancelModalBtn">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Product</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // Initialize products page when DOM is loaded
+        if (document.getElementById('productsTableBody')) {
+            initializeProductsPage();
+        }
+    </script>
+</body>
+</html>
+

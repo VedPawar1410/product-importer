@@ -281,3 +281,500 @@ function resetUploadButton() {
     uploadBtn.disabled = true;
 }
 
+// =============================================================================
+// PRODUCTS PAGE FUNCTIONALITY
+// =============================================================================
+
+// Global state for products page
+let currentPage = 1;
+let currentFilters = {};
+const itemsPerPage = 20;
+
+/**
+ * Initialize products page
+ */
+function initializeProductsPage() {
+    // DOM elements
+    const createProductBtn = document.getElementById('createProductBtn');
+    const deleteAllBtn = document.getElementById('deleteAllBtn');
+    const applyFiltersBtn = document.getElementById('applyFiltersBtn');
+    const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+    const prevPageBtn = document.getElementById('prevPageBtn');
+    const nextPageBtn = document.getElementById('nextPageBtn');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    const cancelModalBtn = document.getElementById('cancelModalBtn');
+    const productForm = document.getElementById('productForm');
+    const productModal = document.getElementById('productModal');
+
+    // Event listeners
+    if (createProductBtn) {
+        createProductBtn.addEventListener('click', openCreateModal);
+    }
+    
+    if (deleteAllBtn) {
+        deleteAllBtn.addEventListener('click', deleteAllProducts);
+    }
+    
+    if (applyFiltersBtn) {
+        applyFiltersBtn.addEventListener('click', applyFilters);
+    }
+    
+    if (clearFiltersBtn) {
+        clearFiltersBtn.addEventListener('click', clearFilters);
+    }
+    
+    if (prevPageBtn) {
+        prevPageBtn.addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                loadProducts(currentPage);
+            }
+        });
+    }
+    
+    if (nextPageBtn) {
+        nextPageBtn.addEventListener('click', () => {
+            currentPage++;
+            loadProducts(currentPage);
+        });
+    }
+    
+    if (closeModalBtn) {
+        closeModalBtn.addEventListener('click', closeProductModal);
+    }
+    
+    if (cancelModalBtn) {
+        cancelModalBtn.addEventListener('click', closeProductModal);
+    }
+    
+    if (productForm) {
+        productForm.addEventListener('submit', submitProductForm);
+    }
+    
+    // Close modal when clicking outside
+    if (productModal) {
+        productModal.addEventListener('click', (e) => {
+            if (e.target === productModal) {
+                closeProductModal();
+            }
+        });
+    }
+    
+    // Load products on page load
+    loadProducts(1);
+}
+
+/**
+ * Load products from the backend
+ * @param {number} page - Page number to load
+ */
+function loadProducts(page = 1) {
+    currentPage = page;
+    
+    // Build query parameters
+    const params = new URLSearchParams();
+    params.append('offset', (page - 1) * itemsPerPage);
+    params.append('limit', itemsPerPage);
+    
+    // Add filters
+    if (currentFilters.sku) {
+        params.append('sku', currentFilters.sku);
+    }
+    if (currentFilters.name) {
+        params.append('name', currentFilters.name);
+    }
+    if (currentFilters.active !== undefined && currentFilters.active !== '') {
+        params.append('active', currentFilters.active);
+    }
+    
+    // Show loading state
+    const tableBody = document.getElementById('productsTableBody');
+    tableBody.innerHTML = '<tr><td colspan="8" class="loading-cell">Loading products...</td></tr>';
+    
+    // Fetch products
+    const xhr = new XMLHttpRequest();
+    
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            try {
+                const data = JSON.parse(xhr.responseText);
+                renderProductsTable(data);
+                updatePaginationControls(data);
+            } catch (error) {
+                showAlert('error', 'Failed to parse products data.');
+            }
+        } else {
+            showAlert('error', `Failed to load products: ${xhr.status}`);
+            tableBody.innerHTML = '<tr><td colspan="8" class="error-cell">Failed to load products</td></tr>';
+        }
+    };
+    
+    xhr.onerror = function() {
+        showAlert('error', 'Network error while loading products.');
+        tableBody.innerHTML = '<tr><td colspan="8" class="error-cell">Network error</td></tr>';
+    };
+    
+    xhr.open('GET', `/products?${params.toString()}`, true);
+    xhr.send();
+}
+
+/**
+ * Apply filters
+ */
+function applyFilters() {
+    currentFilters = getFilters();
+    currentPage = 1;
+    loadProducts(1);
+}
+
+/**
+ * Clear filters
+ */
+function clearFilters() {
+    document.getElementById('filterSku').value = '';
+    document.getElementById('filterName').value = '';
+    document.getElementById('filterActive').value = '';
+    currentFilters = {};
+    currentPage = 1;
+    loadProducts(1);
+}
+
+/**
+ * Get current filter values
+ * @returns {Object} Filter values
+ */
+function getFilters() {
+    const sku = document.getElementById('filterSku').value.trim();
+    const name = document.getElementById('filterName').value.trim();
+    const activeValue = document.getElementById('filterActive').value;
+    
+    const filters = {};
+    
+    if (sku) {
+        filters.sku = sku;
+    }
+    if (name) {
+        filters.name = name;
+    }
+    if (activeValue !== '') {
+        filters.active = activeValue === 'true';
+    }
+    
+    return filters;
+}
+
+/**
+ * Render products table
+ * @param {Object} data - Products data from API
+ */
+function renderProductsTable(data) {
+    const tableBody = document.getElementById('productsTableBody');
+    
+    if (!data.items || data.items.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="8" class="empty-cell">No products found</td></tr>';
+        return;
+    }
+    
+    let html = '';
+    
+    data.items.forEach(product => {
+        const createdAt = new Date(product.created_at).toLocaleString();
+        const activeStatus = product.active 
+            ? '<span class="badge badge-success">Active</span>' 
+            : '<span class="badge badge-inactive">Inactive</span>';
+        const price = product.price !== null ? `$${parseFloat(product.price).toFixed(2)}` : '-';
+        const description = product.description || '-';
+        
+        html += `
+            <tr>
+                <td>${product.id}</td>
+                <td><strong>${escapeHtml(product.sku)}</strong></td>
+                <td>${escapeHtml(product.name)}</td>
+                <td class="description-cell">${escapeHtml(description)}</td>
+                <td>${price}</td>
+                <td>${activeStatus}</td>
+                <td>${createdAt}</td>
+                <td class="actions-cell">
+                    <button class="btn-small btn-edit" onclick="openEditModal(${product.id})">Edit</button>
+                    <button class="btn-small btn-delete" onclick="deleteProduct(${product.id})">Delete</button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    tableBody.innerHTML = html;
+}
+
+/**
+ * Update pagination controls
+ * @param {Object} data - Products data from API
+ */
+function updatePaginationControls(data) {
+    const total = data.total || 0;
+    const totalPages = Math.ceil(total / itemsPerPage) || 1;
+    const currentPageNum = currentPage;
+    
+    // Update info text
+    const paginationInfo = document.getElementById('paginationInfo');
+    const start = (currentPageNum - 1) * itemsPerPage + 1;
+    const end = Math.min(currentPageNum * itemsPerPage, total);
+    paginationInfo.textContent = `Page ${currentPageNum} of ${totalPages} (${total} products total, showing ${start}-${end})`;
+    
+    // Update buttons
+    const prevBtn = document.getElementById('prevPageBtn');
+    const nextBtn = document.getElementById('nextPageBtn');
+    
+    prevBtn.disabled = currentPageNum <= 1;
+    nextBtn.disabled = currentPageNum >= totalPages;
+}
+
+/**
+ * Open create product modal
+ */
+function openCreateModal() {
+    const modal = document.getElementById('productModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const form = document.getElementById('productForm');
+    
+    modalTitle.textContent = 'Create Product';
+    form.reset();
+    document.getElementById('productId').value = '';
+    document.getElementById('productActive').checked = true;
+    
+    modal.classList.remove('hidden');
+}
+
+/**
+ * Open edit product modal
+ * @param {number} productId - Product ID to edit
+ */
+function openEditModal(productId) {
+    // Fetch product details
+    const xhr = new XMLHttpRequest();
+    
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            try {
+                // Find product in current table data
+                const params = new URLSearchParams();
+                params.append('offset', (currentPage - 1) * itemsPerPage);
+                params.append('limit', itemsPerPage);
+                
+                // Add current filters
+                if (currentFilters.sku) params.append('sku', currentFilters.sku);
+                if (currentFilters.name) params.append('name', currentFilters.name);
+                if (currentFilters.active !== undefined && currentFilters.active !== '') {
+                    params.append('active', currentFilters.active);
+                }
+                
+                const xhr2 = new XMLHttpRequest();
+                xhr2.onload = function() {
+                    if (xhr2.status === 200) {
+                        const data = JSON.parse(xhr2.responseText);
+                        const product = data.items.find(p => p.id === productId);
+                        
+                        if (product) {
+                            const modal = document.getElementById('productModal');
+                            const modalTitle = document.getElementById('modalTitle');
+                            
+                            modalTitle.textContent = 'Edit Product';
+                            document.getElementById('productId').value = product.id;
+                            document.getElementById('productSku').value = product.sku || '';
+                            document.getElementById('productName').value = product.name || '';
+                            document.getElementById('productDescription').value = product.description || '';
+                            document.getElementById('productPrice').value = product.price || '';
+                            document.getElementById('productActive').checked = product.active;
+                            
+                            modal.classList.remove('hidden');
+                        }
+                    }
+                };
+                xhr2.open('GET', `/products?${params.toString()}`, true);
+                xhr2.send();
+                
+            } catch (error) {
+                showAlert('error', 'Failed to load product details.');
+            }
+        }
+    };
+    
+    xhr.onerror = function() {
+        showAlert('error', 'Network error while loading product.');
+    };
+    
+    // Just trigger a reload of the current page to get the product
+    const params = new URLSearchParams();
+    params.append('offset', (currentPage - 1) * itemsPerPage);
+    params.append('limit', itemsPerPage);
+    
+    if (currentFilters.sku) params.append('sku', currentFilters.sku);
+    if (currentFilters.name) params.append('name', currentFilters.name);
+    if (currentFilters.active !== undefined && currentFilters.active !== '') {
+        params.append('active', currentFilters.active);
+    }
+    
+    xhr.open('GET', `/products?${params.toString()}`, true);
+    xhr.send();
+}
+
+/**
+ * Close product modal
+ */
+function closeProductModal() {
+    const modal = document.getElementById('productModal');
+    modal.classList.add('hidden');
+}
+
+/**
+ * Submit product form (create or update)
+ * @param {Event} event - Form submit event
+ */
+function submitProductForm(event) {
+    event.preventDefault();
+    
+    const productId = document.getElementById('productId').value;
+    const productData = {
+        sku: document.getElementById('productSku').value.trim(),
+        name: document.getElementById('productName').value.trim(),
+        description: document.getElementById('productDescription').value.trim() || null,
+        price: document.getElementById('productPrice').value ? parseFloat(document.getElementById('productPrice').value) : null,
+        active: document.getElementById('productActive').checked
+    };
+    
+    // Validate
+    if (!productData.sku || !productData.name) {
+        showAlert('error', 'SKU and Name are required fields.');
+        return;
+    }
+    
+    const xhr = new XMLHttpRequest();
+    const isEdit = productId !== '';
+    const url = isEdit ? `/products/${productId}` : '/products';
+    const method = isEdit ? 'PUT' : 'POST';
+    
+    xhr.onload = function() {
+        if (xhr.status === 200 || xhr.status === 201) {
+            showAlert('success', `Product ${isEdit ? 'updated' : 'created'} successfully!`);
+            closeProductModal();
+            loadProducts(currentPage);
+        } else {
+            try {
+                const errorData = JSON.parse(xhr.responseText);
+                showAlert('error', `Failed to save product: ${errorData.detail || 'Unknown error'}`);
+            } catch (error) {
+                showAlert('error', `Failed to save product: ${xhr.status}`);
+            }
+        }
+    };
+    
+    xhr.onerror = function() {
+        showAlert('error', 'Network error while saving product.');
+    };
+    
+    xhr.open(method, url, true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.send(JSON.stringify(productData));
+}
+
+/**
+ * Delete a single product
+ * @param {number} productId - Product ID to delete
+ */
+function deleteProduct(productId) {
+    if (!confirm('Are you sure you want to delete this product?')) {
+        return;
+    }
+    
+    const xhr = new XMLHttpRequest();
+    
+    xhr.onload = function() {
+        if (xhr.status === 204) {
+            showAlert('success', 'Product deleted successfully!');
+            loadProducts(currentPage);
+        } else if (xhr.status === 404) {
+            showAlert('error', 'Product not found.');
+        } else {
+            showAlert('error', `Failed to delete product: ${xhr.status}`);
+        }
+    };
+    
+    xhr.onerror = function() {
+        showAlert('error', 'Network error while deleting product.');
+    };
+    
+    xhr.open('DELETE', `/products/${productId}`, true);
+    xhr.send();
+}
+
+/**
+ * Delete all products (bulk delete)
+ */
+function deleteAllProducts() {
+    const confirmMsg = 'Are you sure you want to delete ALL products? This action cannot be undone!';
+    
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+    
+    // Double confirmation for safety
+    if (!confirm('This will permanently delete all products. Are you absolutely sure?')) {
+        return;
+    }
+    
+    const xhr = new XMLHttpRequest();
+    
+    xhr.onload = function() {
+        if (xhr.status === 204) {
+            showAlert('success', 'All products deleted successfully!');
+            currentPage = 1;
+            loadProducts(1);
+        } else {
+            showAlert('error', `Failed to delete products: ${xhr.status}`);
+        }
+    };
+    
+    xhr.onerror = function() {
+        showAlert('error', 'Network error while deleting products.');
+    };
+    
+    xhr.open('DELETE', '/products/all', true);
+    xhr.send();
+}
+
+/**
+ * Show alert message at top of page
+ * @param {string} type - Alert type: 'success', 'error', 'info'
+ * @param {string} message - Alert message
+ */
+function showAlert(type, message) {
+    const alertSection = document.getElementById('alertSection');
+    const alertMessage = document.getElementById('alertMessage');
+    
+    if (!alertSection || !alertMessage) {
+        return;
+    }
+    
+    alertMessage.className = `alert-message alert-${type}`;
+    alertMessage.textContent = message;
+    alertSection.classList.remove('hidden');
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        alertSection.classList.add('hidden');
+    }, 5000);
+}
+
+/**
+ * Escape HTML to prevent XSS
+ * @param {string} text - Text to escape
+ * @returns {string} Escaped text
+ */
+function escapeHtml(text) {
+    if (text === null || text === undefined) {
+        return '';
+    }
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
