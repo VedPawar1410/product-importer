@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
 from .config import settings
 
@@ -40,8 +40,7 @@ async_engine = create_async_engine(_async_url, echo=False, future=True)
 AsyncSessionLocal = async_sessionmaker(async_engine, expire_on_commit=False, class_=AsyncSession)
 
 
-@asynccontextmanager
-async def get_async_db() -> AsyncSession:  # noqa: D401 (simple docstring)
+async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency that yields an **async** database session."""
     async with AsyncSessionLocal() as session:
         try:

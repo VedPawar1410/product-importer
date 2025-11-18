@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 def create_webhook(db: Session, webhook_in: WebhookCreate) -> WebhookModel:
     """Persist a new :class:`~app.models.webhook.Webhook`."""
 
-    webhook = WebhookModel(**webhook_in.dict())
+    webhook = WebhookModel(**webhook_in.model_dump())
     db.add(webhook)
     db.commit()
     db.refresh(webhook)

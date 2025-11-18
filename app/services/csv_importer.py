@@ -78,7 +78,8 @@ def import_csv(
     # Preconditions / setup
     # ---------------------------------------------------------------------
 
-    file_path = Path(file_path)
+    # Always load from /shared
+    file_path = Path("/shared") / Path(file_path).name
     if not file_path.is_file():
         raise FileNotFoundError(file_path)
 

@@ -3,7 +3,7 @@ uvicorn[standard]
 sqlalchemy>=2.0
 asyncpg
 alembic
-psycopg[binary]
+psycopg2-binary
 pydantic==2.7.1
 pydantic-settings==2.2.1
 python-dotenv

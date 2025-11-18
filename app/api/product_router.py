@@ -68,7 +68,7 @@ async def list_products(
 
 @router.post("/", response_model=Product, status_code=status.HTTP_201_CREATED)
 async def create_product(*, db: AsyncSession = Depends(get_async_db), product: ProductCreate):
-    new_product = ProductModel(**product.dict(exclude_unset=True))
+    new_product = ProductModel(**product.model_dump(exclude_unset=True))
     db.add(new_product)
     try:
         await db.commit()
@@ -94,7 +94,7 @@ async def update_product(
     stmt = (
         sqlalchemy_update(ProductModel)
         .where(ProductModel.id == product_id)
-        .values(**product.dict(exclude_unset=True))
+        .values(**product.model_dump(exclude_unset=True))
         .execution_options(synchronize_session="fetch")
     )
     result = await db.execute(stmt)

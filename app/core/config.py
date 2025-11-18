@@ -1,14 +1,14 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 class Settings(BaseSettings):
-    """Application configuration pulled from env variables or defaults."""
-
-    database_url: str = "sqlite:///./app.db"
-    celery_broker_url: str = "redis://localhost:6379/0"
-    celery_result_backend: str = "redis://localhost:6379/0"
-
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
+    model_config = SettingsConfigDict(
+        env_file=".env", 
+        env_file_encoding="utf-8",
+        extra="ignore"  # Ignore extra environment variables
+    )
+    
+    database_url: str = "postgresql://postgres:postgres@db:5432/products"
+    celery_broker_url: str = "redis://redis:6379/0"
+    celery_result_backend: str = "redis://redis:6379/0"
 
 settings = Settings()

@@ -1,5 +1,11 @@
-from pydantic import BaseModel
 from datetime import datetime
+from pydantic import BaseModel
+
+
+class ProductCreate(BaseModel):
+    name: str
+    sku: str
+    description: str | None = None
 
 
 class ProductBase(BaseModel):
@@ -25,8 +31,7 @@ class Product(ProductBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 class PaginatedProducts(BaseModel):

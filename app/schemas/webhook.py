@@ -13,5 +13,4 @@ class WebhookCreate(WebhookBase):
 class Webhook(WebhookBase):
     id: int
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
