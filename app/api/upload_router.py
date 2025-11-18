@@ -34,31 +34,30 @@ router = APIRouter(prefix="/upload", tags=["upload"])
 )
 async def start_upload(file: UploadFile = File(...)) -> dict[str, str]:
     """
-    Accept CSV → save to shared Docker volume → enqueue Celery task
+    Accept CSV → store in Redis → enqueue Celery task
+    
+    For Render deployment: stores file content in Redis since disks cannot
+    be shared between web and worker services. Files expire after 1 hour.
     """
 
-    # Create a task_id used for filenames + Redis keys
+    # Create a task_id used for Redis keys
     task_id: str = uuid.uuid4().hex
 
-    # Persistent folder accessible by both web + worker containers
-    # Uses /data for Render, compatible with /shared for local Docker
-    upload_dir = Path("/data/uploads")
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save uploaded file into persistent volume
-    tmp_path = upload_dir / f"{task_id}.csv"
-
-    with tmp_path.open("wb") as buffer:
-        while chunk := await file.read(1024 * 1024):  # 1 MB chunks
-            buffer.write(chunk)
+    # Read entire file content into memory
+    file_content = await file.read()
+    
+    # Store file content in Redis (expires after 1 hour)
+    redis_client_binary: Redis = Redis.from_url(settings.celery_broker_url, decode_responses=False)
+    file_key = f"upload:file:{task_id}"
+    redis_client_binary.setex(file_key, 3600, file_content)  # 1 hour TTL
 
     # Create initial QUEUED status
     redis_client: Redis = Redis.from_url(settings.celery_broker_url, decode_responses=True)
     status_key = f"upload:{task_id}"
     redis_client.hset(status_key, mapping={"status": "QUEUED"})
 
-    # Enqueue Celery job
-    celery_result = import_products_task.delay(task_id, str(tmp_path))
+    # Enqueue Celery job with task_id (worker will fetch from Redis)
+    celery_result = import_products_task.delay(task_id)
 
     return {
         "task_id": task_id,

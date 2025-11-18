@@ -10,8 +10,7 @@ The actual database persistence logic lives in `product_service.upsert_products`
 which performs a *case-insensitive* upsert on the `sku` column.  The importer is
 therefore only concerned with:
 
-1. Reading the file line-by-line using the streaming API (no `pandas` or
-   `csv.reader` slurp-all-into-memory shortcuts).
+1. Reading the CSV content line-by-line using the streaming API.
 2. Converting each CSV row into a `ProductCreate` pydantic model.
 3. Collecting rows into batches (default size = 1000) and delegating to
    `product_service`.
@@ -25,6 +24,7 @@ Celery task so it will not block the web process.
 from __future__ import annotations
 
 import csv
+import io
 from pathlib import Path
 from typing import Iterable, List, Optional
 
@@ -38,6 +38,82 @@ from . import product_service
 # ---------------------------------------------------------------------------
 # Public helpers
 # ---------------------------------------------------------------------------
+
+
+def import_csv_from_content(
+    db: Session,
+    file_content: bytes,
+    *,
+    redis_client: Optional[Redis] = None,
+    progress_key: str | None = None,
+    batch_size: int = 1000,
+) -> int:
+    """Stream CSV content from memory, batch the rows and upsert them into the DB.
+
+    This is the primary import function for Render deployment where file storage
+    is not shared between services. The CSV content is stored in Redis and
+    passed directly to this function.
+
+    Parameters
+    ----------
+    db:
+        SQLAlchemy session that will be used by :pyfunc:`product_service`.
+    file_content:
+        Binary CSV content from Redis.
+    redis_client:
+        Optional redis client.  If omitted, a new client will be instantiated.
+    progress_key:
+        The Redis key in which progress data is stored.
+    batch_size:
+        Number of rows to accumulate before calling product_service.
+
+    Returns
+    -------
+    int
+        Number of rows successfully processed.
+    """
+
+    if redis_client is None:
+        redis_client = Redis.from_url(settings.celery_broker_url, decode_responses=True)
+
+    if progress_key is None:
+        progress_key = f"import:products:memory:progress"
+
+    # Convert bytes to text stream
+    text_content = file_content.decode('utf-8')
+    csv_file = io.StringIO(text_content)
+    
+    # Count total lines for progress tracking
+    total_lines = text_content.count('\n')
+    if total_lines > 0:
+        total_lines -= 1  # Subtract header
+
+    # Main import loop – stream, batch, upsert, report progress
+    processed = 0
+    batch: list[ProductCreate] = []
+
+    reader = csv.DictReader(csv_file)
+    
+    for row in reader:
+        try:
+            batch.append(ProductCreate(**row))
+        except Exception as exc:  # noqa: BLE001  (broad but logs row)
+            # Skip problematic rows
+            continue
+
+        if len(batch) >= batch_size:
+            _flush_batch(db, batch)
+            processed += len(batch)
+            _report_progress(redis_client, progress_key, processed, total_lines)
+            batch.clear()
+
+    # Flush any remaining rows
+    if batch:
+        _flush_batch(db, batch)
+        processed += len(batch)
+        _report_progress(redis_client, progress_key, processed, total_lines)
+
+    return processed
 
 
 def import_csv(
