@@ -6,6 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: product-importer-web
+    command: ./run_web.sh  # Override Dockerfile CMD for local dev (web only)
     ports:
       - "8000:8000"
     volumes:
