@@ -49,6 +49,18 @@ function uploadCSVFile() {
         return;
     }
 
+    // Check file size (5 MB limit for free tier)
+    const maxSize = 5 * 1024 * 1024; // 5 MB
+    if (file.size > maxSize) {
+        const fileSizeMB = (file.size / 1024 / 1024).toFixed(1);
+        setStatus('error', `File too large (${fileSizeMB} MB). Maximum size: 5 MB. For larger files, please split into multiple CSVs.`);
+        return;
+    }
+
+    // Show file size info
+    const fileSizeKB = (file.size / 1024).toFixed(1);
+    console.log(`Uploading: ${file.name} (${fileSizeKB} KB)`);
+
     // Disable upload button during upload
     uploadBtn.disabled = true;
     uploadBtn.textContent = 'Uploading...';
