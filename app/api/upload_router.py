@@ -39,30 +39,40 @@ async def start_upload(file: UploadFile = File(...)) -> dict[str, str]:
     For Render deployment: stores file content in Redis since disks cannot
     be shared between web and worker services. Files expire after 1 hour.
     """
-
-    # Create a task_id used for Redis keys
-    task_id: str = uuid.uuid4().hex
-
-    # Read entire file content into memory
-    file_content = await file.read()
     
-    # Store file content in Redis (expires after 1 hour)
-    redis_client_binary: Redis = Redis.from_url(settings.celery_broker_url, decode_responses=False)
-    file_key = f"upload:file:{task_id}"
-    redis_client_binary.setex(file_key, 3600, file_content)  # 1 hour TTL
+    try:
+        # Create a task_id used for Redis keys
+        task_id: str = uuid.uuid4().hex
 
-    # Create initial QUEUED status
-    redis_client: Redis = Redis.from_url(settings.celery_broker_url, decode_responses=True)
-    status_key = f"upload:{task_id}"
-    redis_client.hset(status_key, mapping={"status": "QUEUED"})
+        # Read entire file content into memory
+        file_content = await file.read()
+        
+        # Store file content in Redis (expires after 1 hour)
+        redis_client_binary: Redis = Redis.from_url(settings.celery_broker_url, decode_responses=False)
+        file_key = f"upload:file:{task_id}"
+        redis_client_binary.setex(file_key, 3600, file_content)  # 1 hour TTL
 
-    # Enqueue Celery job with task_id (worker will fetch from Redis)
-    celery_result = import_products_task.delay(task_id)
+        # Create initial QUEUED status
+        redis_client: Redis = Redis.from_url(settings.celery_broker_url, decode_responses=True)
+        status_key = f"upload:{task_id}"
+        redis_client.hset(status_key, mapping={"status": "QUEUED"})
 
-    return {
-        "task_id": task_id,
-        "celery_task_id": celery_result.id,
-    }
+        # Enqueue Celery job with task_id (worker will fetch from Redis)
+        celery_result = import_products_task.delay(task_id)
+
+        return {
+            "task_id": task_id,
+            "celery_task_id": celery_result.id,
+        }
+    except Exception as e:
+        # Log the actual error for debugging
+        import traceback
+        error_detail = f"Upload failed: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)  # This will appear in Render logs
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Upload failed: {str(e)}. Check if Redis and database are connected."
+        )
 
 
 # ---------------------------------------------------------------------------
