@@ -32,7 +32,7 @@ A production-ready product import system with CSV processing, async task managem
 
 **One-click deployment to production:**
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://docs.google.com/document/d/1iBccj_13395ulPjqUtkFds3gkeOKJCMllzzdfg8hhvk/edit?usp=sharing)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://product-importer-web-e3bi.onrender.com)
 
 1. Click the button above or follow instructions in `RENDER_DEPLOYMENT.md`
 2. Connect your GitHub repository
