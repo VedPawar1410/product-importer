@@ -2,7 +2,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func, delete, update as sqlalchemy_update
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from ..models.product import Product as ProductModel
 from ..schemas.product import (
@@ -11,7 +11,7 @@ from ..schemas.product import (
     ProductCreate,
     ProductUpdate,
 )
-from ..core.database import get_async_db
+from ..core.database import get_db
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -37,9 +37,9 @@ def _apply_filters(stmt, sku: str | None, name: str | None, active: bool | None)
 
 
 @router.get("/", response_model=PaginatedProducts)
-async def list_products(
+def list_products(
     *,
-    db: AsyncSession = Depends(get_async_db),
+    db: Session = Depends(get_db),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     sku: str | None = Query(None),
@@ -50,13 +50,12 @@ async def list_products(
     stmt = _apply_filters(stmt, sku, name, active)
     stmt = stmt.offset(offset).limit(limit)
 
-    result = await db.execute(stmt)
-    items = result.scalars().all()
+    items = db.execute(stmt).scalars().all()
 
     # total count
     count_stmt = select(func.count()).select_from(ProductModel)
     count_stmt = _apply_filters(count_stmt, sku, name, active)
-    total = (await db.execute(count_stmt)).scalar_one()
+    total = db.execute(count_stmt).scalar_one()
 
     return PaginatedProducts(total=total, items=items)
 
@@ -67,15 +66,15 @@ async def list_products(
 
 
 @router.post("/", response_model=Product, status_code=status.HTTP_201_CREATED)
-async def create_product(*, db: AsyncSession = Depends(get_async_db), product: ProductCreate):
+def create_product(*, db: Session = Depends(get_db), product: ProductCreate):
     new_product = ProductModel(**product.model_dump(exclude_unset=True))
     db.add(new_product)
     try:
-        await db.commit()
+        db.commit()
     except Exception as exc:  # noqa: BLE001 (re-raise)
-        await db.rollback()
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    await db.refresh(new_product)
+    db.refresh(new_product)
     return new_product
 
 
@@ -85,10 +84,10 @@ async def create_product(*, db: AsyncSession = Depends(get_async_db), product: P
 
 
 @router.put("/{product_id}", response_model=Product)
-async def update_product(
+def update_product(
     *,
     product_id: int,
-    db: AsyncSession = Depends(get_async_db),
+    db: Session = Depends(get_db),
     product: ProductUpdate,
 ):
     stmt = (
@@ -97,11 +96,11 @@ async def update_product(
         .values(**product.model_dump(exclude_unset=True))
         .execution_options(synchronize_session="fetch")
     )
-    result = await db.execute(stmt)
+    result = db.execute(stmt)
     if result.rowcount == 0:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
-    await db.commit()
-    updated = await db.get(ProductModel, product_id)
+    db.commit()
+    updated = db.get(ProductModel, product_id)
     return updated
 
 
@@ -111,12 +110,12 @@ async def update_product(
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_product(*, product_id: int, db: AsyncSession = Depends(get_async_db)):
+def delete_product(*, product_id: int, db: Session = Depends(get_db)):
     stmt = delete(ProductModel).where(ProductModel.id == product_id)
-    result = await db.execute(stmt)
+    result = db.execute(stmt)
     if result.rowcount == 0:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
-    await db.commit()
+    db.commit()
     return None
 
 
@@ -126,15 +125,15 @@ async def delete_product(*, product_id: int, db: AsyncSession = Depends(get_asyn
 
 
 @router.delete("/all", status_code=status.HTTP_204_NO_CONTENT)
-async def bulk_delete_products(
+def bulk_delete_products(
     *,
-    db: AsyncSession = Depends(get_async_db),
+    db: Session = Depends(get_db),
     sku: str | None = Query(None),
     name: str | None = Query(None),
     active: bool | None = Query(None),
 ):
     stmt = delete(ProductModel)
     stmt = _apply_filters(stmt, sku, name, active)
-    await db.execute(stmt)
-    await db.commit()
+    db.execute(stmt)
+    db.commit()
     return None

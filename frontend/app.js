@@ -13,11 +13,27 @@ const statusSection = document.getElementById('statusSection');
 const statusMessage = document.getElementById('statusMessage');
 const statusDetails = document.getElementById('statusDetails');
 
-// Initialize event listeners
-if (csvFileInput && uploadBtn) {
-    csvFileInput.addEventListener('change', handleFileSelect);
-    uploadBtn.addEventListener('click', uploadCSVFile);
-}
+// -----------------------------------------------------------------------------
+// PAGE INITIALIZATION
+// -----------------------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+    const path = window.location.pathname;
+
+    if (path === '/' || path.endsWith('/index.html')) {
+        // Find elements for the upload page
+        const csvFileInput = document.getElementById('csvFile');
+        const uploadBtn = document.getElementById('uploadBtn');
+
+        if (csvFileInput && uploadBtn) {
+            csvFileInput.addEventListener('change', handleFileSelect);
+            uploadBtn.addEventListener('click', uploadCSVFile);
+        }
+    } else if (path.endsWith('/products.html')) {
+        initializeProductsPage();
+    } else if (path.endsWith('/webhooks.html')) {
+        initializeWebhooksPage();
+    }
+});
 
 /**
  * Handle file selection
