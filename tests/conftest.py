@@ -11,7 +11,7 @@ import tempfile
 
 import pytest
 
-TEST_DB = os.getenv("TEST_DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/products_test")
+TEST_DB = os.getenv("TEST_DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/products_test")
 TEST_REDIS = os.getenv("TEST_REDIS_URL", "redis://localhost:6379/15")
 
 # The app reads its settings when it's first imported, so point it at the test

@@ -1,4 +1,7 @@
-version: "3.9"
+# Local stack: web (FastAPI) + worker (Celery) + Postgres + Redis.
+#   docker compose up --build        -> http://localhost:8000
+#   docker compose up -d db redis    -> just the databases, e.g. for pytest
+# (Render runs web + worker in one container instead; see render.yaml.)
 
 services:
   web:
@@ -18,9 +21,11 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       UVICORN_WORKERS: 4
       UPLOAD_DIR: /data/uploads  # shared volume, so the worker container sees uploads
-    depends_on:
-      - db
-      - redis
+    depends_on:  # start only once Postgres and Redis accept connections
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   worker:
     build:
@@ -38,8 +43,10 @@ services:
       UPLOAD_DIR: /data/uploads
       CELERY_LOG_LEVEL: info
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   db:
     image: postgres:15
@@ -48,14 +55,26 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: products
+    ports:
+      - "5433:5432"  # 5433 on the host so it doesn't clash with a locally installed Postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d products"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
   redis:
     image: redis:7
     container_name: product-importer-redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
 volumes:
   postgres_data:

@@ -1,6 +1,7 @@
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from .api.upload_router import router as upload_router
 from .api.product_router import router as product_router
@@ -9,7 +10,14 @@ from .api.webhook_router import router as webhook_router
 from .core.database import Base, engine
 from .models import product, webhook  # import all models so metadata loads
 
-Base.metadata.create_all(bind=engine)
+# Create missing tables. Several uvicorn worker processes import this module at
+# the same moment; without coordination two of them run CREATE TABLE together and
+# one crashes (UniqueViolation on pg_type). A transaction-scoped Postgres advisory
+# lock makes them take turns: the first creates the tables, the rest find them.
+SCHEMA_LOCK_ID = 7_431_001  # arbitrary app-wide number for this lock
+with engine.begin() as conn:
+    conn.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": SCHEMA_LOCK_ID})
+    Base.metadata.create_all(bind=conn)
 
 
 app = FastAPI(title="Product Importer API")
