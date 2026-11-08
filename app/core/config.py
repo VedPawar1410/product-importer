@@ -15,4 +15,8 @@ class Settings(BaseSettings):
     celery_broker_url: str = os.getenv("REDIS_URL") or os.getenv("CELERY_BROKER_URL") or "redis://redis:6379/0"
     celery_result_backend: str = os.getenv("REDIS_URL") or os.getenv("CELERY_RESULT_BACKEND") or "redis://redis:6379/0"
 
+    # Where uploaded CSVs wait for the worker. Web and worker must share this
+    # directory: on Render they run in one container, so /tmp works.
+    upload_dir: str = "/tmp/uploads"
+
 settings = Settings()

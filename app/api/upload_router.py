@@ -10,6 +10,7 @@ import flow executed by Celery:
 
 from __future__ import annotations
 
+import shutil
 import uuid
 from pathlib import Path
 
@@ -32,47 +33,41 @@ router = APIRouter(prefix="/upload", tags=["upload"])
     summary="Start a new product import",
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def start_upload(file: UploadFile = File(...)) -> dict[str, str]:
+def start_upload(file: UploadFile = File(...)) -> dict[str, str]:
     """
-    Accept CSV → store in Redis → enqueue Celery task
-    
-    For Render deployment: stores file content in Redis since disks cannot
-    be shared between web and worker services. Files expire after 1 hour.
+    Save the CSV to the shared upload directory → enqueue the Celery import.
+
+    The file is copied in 1 MB chunks, so memory use stays flat whatever the
+    file size. Only the task id travels through Redis, never the file itself.
+    (A plain `def` route: FastAPI runs it in a thread, so the blocking file copy
+    doesn't stall other requests.)
     """
-    
+
+    task_id: str = uuid.uuid4().hex
+    upload_dir = Path(settings.upload_dir)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    file_path = upload_dir / f"{task_id}.csv"
+
     try:
-        # Create a task_id used for Redis keys
-        task_id: str = uuid.uuid4().hex
+        with file_path.open("wb") as out:
+            shutil.copyfileobj(file.file, out, length=1024 * 1024)
 
-        # Read entire file content into memory
-        file_content = await file.read()
-        
-        # Store file content in Redis (expires after 1 hour)
-        redis_client_binary: Redis = Redis.from_url(settings.celery_broker_url, decode_responses=False)
-        file_key = f"upload:file:{task_id}"
-        redis_client_binary.setex(file_key, 3600, file_content)  # 1 hour TTL
-
-        # Create initial QUEUED status
         redis_client: Redis = Redis.from_url(settings.celery_broker_url, decode_responses=True)
-        status_key = f"upload:{task_id}"
-        redis_client.hset(status_key, mapping={"status": "QUEUED"})
+        redis_client.hset(f"upload:{task_id}", mapping={"status": "QUEUED"})
 
-        # Enqueue Celery job with task_id (worker will fetch from Redis)
-        celery_result = import_products_task.delay(task_id)
-
-        return {
-            "task_id": task_id,
-            "celery_task_id": celery_result.id,
-        }
+        celery_result = import_products_task.delay(task_id, str(file_path))
     except Exception as e:
-        # Log the actual error for debugging
-        import traceback
-        error_detail = f"Upload failed: {str(e)}\n{traceback.format_exc()}"
-        print(error_detail)  # This will appear in Render logs
+        file_path.unlink(missing_ok=True)
+        print(f"Upload failed: {e!r}")  # appears in Render logs
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Upload failed: {str(e)}. Check if Redis and database are connected."
+            detail=f"Upload failed: {e}. Check that Redis and the database are reachable.",
         )
+
+    return {
+        "task_id": task_id,
+        "celery_task_id": celery_result.id,
+    }
 
 
 # ---------------------------------------------------------------------------

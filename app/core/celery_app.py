@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from celery import Celery
+from redis import Redis
 
 from .config import settings
 
@@ -8,82 +11,52 @@ celery_app = Celery(
     backend=settings.celery_result_backend,
 )
 
+# Imported after celery_app exists: webhook_service registers its own task on it.
+from .database import SessionLocal  # noqa: E402
+from ..services import csv_importer, webhook_service  # noqa: E402
 
-@celery_app.task
-def example_task() -> str:
-    """A placeholder Celery task."""
-    # TODO: Replace with real task implementation
-    return "example"
+# Status/progress records only matter while someone is watching the import.
+# Expiring them keeps the small free-tier Redis (noeviction policy) from filling up.
+STATUS_TTL_SECONDS = 24 * 60 * 60
+
 
 # ---------------------------------------------------------------------------
 # Product import task
 # ---------------------------------------------------------------------------
 
-from contextlib import suppress
-from pathlib import Path
-
-from redis import Redis
-
-from .database import SessionLocal
-from ..services import csv_importer, webhook_service
-from ..schemas.webhook import WebhookCreate
-
 
 @celery_app.task(name="import_products", bind=True)
-def import_products_task(self, task_id: str) -> int:  # noqa: D401 (simple docstring)
-    """Import a CSV file containing product data.
-
-    The task retrieves CSV content from Redis, processes it in batches,
-    inserts/updates products in the database and writes *live* progress
-    information to Redis so that a client can poll and display a progress bar.
+def import_products_task(self, task_id: str, file_path: str) -> int:
+    """Import the CSV saved at *file_path* and report progress in Redis.
 
     Redis structure::
 
-        upload:file:{task_id} -> <binary CSV content>
         upload:{task_id} -> {
-            status: "PROCESSING" | "COMPLETED" | "FAILED",
-            processed: <int>,          # rows processed (present on success)
-            error: <str | null>,       # error message   (present on failure)
+            status: "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED",
+            processed: <int>,          # rows imported (on success)
+            error: <str>,              # error message (on failure)
         }
 
         upload:{task_id}:progress -> {
-            processed_rows: <int>,
-            total_rows: <int>,
-            successful_rows: <int>,
-            failed_rows: <int>,
+            processed_rows, total_rows, successful_rows, failed_rows
         }
 
-    Parameters
-    ----------
-    task_id
-        UUID (or any unique identifier) supplied by the caller so progress can
-        be correlated with a specific file upload.
+    The upload is deleted afterwards, whether the import succeeded or not.
     """
 
     redis_client: Redis = Redis.from_url(settings.celery_broker_url, decode_responses=True)
-    redis_client_binary: Redis = Redis.from_url(settings.celery_broker_url, decode_responses=False)
 
     status_key = f"upload:{task_id}"
     progress_key = f"{status_key}:progress"
-    file_key = f"upload:file:{task_id}"
 
-    # The task might be submitted by the API which already set *QUEUED* – we now
-    # mark it as *PROCESSING*.
     redis_client.hset(status_key, mapping={"status": "PROCESSING"})
 
-    processed_rows: int = 0
     try:
-        # Retrieve file content from Redis
-        file_content = redis_client_binary.get(file_key)
-        if not file_content:
-            raise ValueError(f"File content not found in Redis for task {task_id}")
-
-        # Always open a dedicated SQLAlchemy session inside the task so it is
-        # fully isolated from the web worker.
+        # A dedicated session inside the task, fully isolated from the web process.
         with SessionLocal() as db:
-            processed_rows = csv_importer.import_csv_from_content(
+            processed_rows = csv_importer.import_csv(
                 db,
-                file_content,
+                file_path,
                 redis_client=redis_client,
                 progress_key=progress_key,
             )
@@ -106,28 +79,15 @@ def import_products_task(self, task_id: str) -> int:  # noqa: D401 (simple docst
         except Exception as exc:  # noqa: BLE001 – a webhook problem must not fail the import
             print(f"Could not enqueue import.completed webhooks: {exc}")
 
-        # Clean up file content from Redis after successful processing
-        redis_client_binary.delete(file_key)
-
         return processed_rows
 
     except Exception as exc:
-        # Ensure failure is visible to the caller *before* re-raising so Celery
-        # can still record the traceback.
-        redis_client.hset(
-            status_key,
-            mapping={
-                "status": "FAILED",
-                "error": str(exc),
-            },
-        )
-
-        # Clean up file content from Redis even on failure
-        try:
-            redis_client_binary.delete(file_key)
-        except:
-            pass
-
-        # Re-raise so Celery marks the task as *FAILURE* in the result backend
-        # (useful for Flower / monitoring).
+        # Make the failure visible to the polling UI before re-raising, so
+        # Celery still records the traceback.
+        redis_client.hset(status_key, mapping={"status": "FAILED", "error": str(exc)})
         raise
+
+    finally:
+        Path(file_path).unlink(missing_ok=True)
+        redis_client.expire(status_key, STATUS_TTL_SECONDS)
+        redis_client.expire(progress_key, STATUS_TTL_SECONDS)
