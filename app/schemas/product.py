@@ -1,14 +1,10 @@
 from datetime import datetime
-from pydantic import BaseModel
-
-
-class ProductCreate(BaseModel):
-    name: str
-    sku: str
-    description: str | None = None
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProductBase(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     sku: str | None = None
     name: str | None = None
     description: str | None = None
@@ -17,8 +13,8 @@ class ProductBase(BaseModel):
 
 
 class ProductCreate(ProductBase):
-    sku: str
-    name: str
+    sku: str = Field(min_length=1)
+    name: str = Field(min_length=1)
     active: bool | None = True
 
 
@@ -31,7 +27,7 @@ class Product(ProductBase):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PaginatedProducts(BaseModel):

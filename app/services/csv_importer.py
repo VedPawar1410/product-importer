@@ -90,28 +90,29 @@ def import_csv_from_content(
 
     # Main import loop – stream, batch, upsert, report progress
     processed = 0
+    failed = 0
     batch: list[ProductCreate] = []
 
     reader = csv.DictReader(csv_file)
-    
+
     for row in reader:
-        try:
-            batch.append(ProductCreate(**row))
-        except Exception as exc:  # noqa: BLE001  (broad but logs row)
-            # Skip problematic rows
+        product = _parse_row(row)
+        if product is None:
+            failed += 1  # counted and reported, never silently dropped
             continue
+        batch.append(product)
 
         if len(batch) >= batch_size:
             _flush_batch(db, batch)
             processed += len(batch)
-            _report_progress(redis_client, progress_key, processed, total_lines)
+            _report_progress(redis_client, progress_key, processed, total_lines, failed)
             batch.clear()
 
-    # Flush any remaining rows
+    # Flush any remaining rows (and always report, so failures-only files show up)
     if batch:
         _flush_batch(db, batch)
         processed += len(batch)
-        _report_progress(redis_client, progress_key, processed, total_lines)
+    _report_progress(redis_client, progress_key, processed, total_lines, failed)
 
     return processed
 
@@ -211,6 +212,16 @@ def import_csv(
 # ---------------------------------------------------------------------------
 
 
+def _parse_row(row: dict) -> ProductCreate | None:
+    """Validate one CSV row. Empty cells mean "no value"; returns None for invalid rows."""
+
+    cleaned = {k: (v if v not in ("", None) else None) for k, v in row.items() if k}
+    try:
+        return ProductCreate(**cleaned)
+    except Exception:  # noqa: BLE001 – any validation error makes the row invalid
+        return None
+
+
 def _flush_batch(db: Session, batch: Iterable[ProductCreate]) -> None:
     """Delegate to *product_service* and commit the transaction."""
 
@@ -226,15 +237,16 @@ def _report_progress(
     key: str,
     processed: int,
     total: int,
+    failed: int = 0,
 ) -> None:
     """Write progress information to Redis so callers can poll."""
 
     redis_client.hset(
-        key, 
+        key,
         mapping={
-            "processed_rows": processed,
+            "processed_rows": processed + failed,
             "total_rows": total,
-            "successful_rows": processed,  # All processed rows are successful (we skip errors)
-            "failed_rows": 0,  # We skip invalid rows, so failed = 0
+            "successful_rows": processed,
+            "failed_rows": failed,
         }
     )

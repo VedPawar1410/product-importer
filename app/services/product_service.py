@@ -46,7 +46,7 @@ def upsert_products(db: Session, products: list[ProductCreate]) -> None:
     
     # On conflict (duplicate SKU), update the existing row
     stmt = stmt.on_conflict_do_update(
-        index_elements=['sku'],  # The unique constraint column
+        index_elements=[func.lower(Product.sku)],  # matches the unique lower(sku) index
         set_={
             'name': stmt.excluded.name,
             'description': stmt.excluded.description,

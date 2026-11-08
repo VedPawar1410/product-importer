@@ -2,6 +2,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func, delete, update as sqlalchemy_update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.product import Product as ProductModel
@@ -66,17 +67,43 @@ async def list_products(
 # ---------------------------------------------------------------------------
 
 
+def _duplicate_sku(sku: str | None) -> HTTPException:
+    return HTTPException(status.HTTP_409_CONFLICT, f"A product with SKU '{sku}' already exists (SKUs ignore case)")
+
+
 @router.post("/", response_model=Product, status_code=status.HTTP_201_CREATED)
 async def create_product(*, db: AsyncSession = Depends(get_async_db), product: ProductCreate):
     new_product = ProductModel(**product.model_dump(exclude_unset=True))
     db.add(new_product)
     try:
         await db.commit()
-    except Exception as exc:  # noqa: BLE001 (re-raise)
+    except IntegrityError as exc:
         await db.rollback()
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise _duplicate_sku(product.sku) from exc
     await db.refresh(new_product)
     return new_product
+
+
+# ---------------------------------------------------------------------------
+# DELETE /products/all – bulk delete (filtered)
+# Declared before the /{product_id} routes: FastAPI matches routes in order, and
+# otherwise "all" is captured as a product_id and rejected as "not an integer".
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/all", status_code=status.HTTP_204_NO_CONTENT)
+async def bulk_delete_products(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    sku: str | None = Query(None),
+    name: str | None = Query(None),
+    active: bool | None = Query(None),
+):
+    stmt = delete(ProductModel)
+    stmt = _apply_filters(stmt, sku, name, active)
+    await db.execute(stmt)
+    await db.commit()
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +124,11 @@ async def update_product(
         .values(**product.model_dump(exclude_unset=True))
         .execution_options(synchronize_session="fetch")
     )
-    result = await db.execute(stmt)
+    try:
+        result = await db.execute(stmt)
+    except IntegrityError as exc:
+        await db.rollback()
+        raise _duplicate_sku(product.sku) from exc
     if result.rowcount == 0:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
     await db.commit()
@@ -116,25 +147,5 @@ async def delete_product(*, product_id: int, db: AsyncSession = Depends(get_asyn
     result = await db.execute(stmt)
     if result.rowcount == 0:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
-    await db.commit()
-    return None
-
-
-# ---------------------------------------------------------------------------
-# DELETE /products/all – bulk delete (filtered)
-# ---------------------------------------------------------------------------
-
-
-@router.delete("/all", status_code=status.HTTP_204_NO_CONTENT)
-async def bulk_delete_products(
-    *,
-    db: AsyncSession = Depends(get_async_db),
-    sku: str | None = Query(None),
-    name: str | None = Query(None),
-    active: bool | None = Query(None),
-):
-    stmt = delete(ProductModel)
-    stmt = _apply_filters(stmt, sku, name, active)
-    await db.execute(stmt)
     await db.commit()
     return None

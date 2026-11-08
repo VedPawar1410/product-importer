@@ -88,15 +88,6 @@ def import_products_task(self, task_id: str) -> int:  # noqa: D401 (simple docst
                 progress_key=progress_key,
             )
 
-            # Persist a *webhook event* so downstream services can react.  In a
-            # real-world app this could enqueue another Celery task that
-            # dispatches the HTTP request; for now we simply record it.
-            with suppress(Exception):
-                webhook_service.create_webhook(
-                    db,
-                    WebhookCreate(url="import.completed"),
-                )
-
         redis_client.hset(
             status_key,
             mapping={
@@ -104,6 +95,16 @@ def import_products_task(self, task_id: str) -> int:  # noqa: D401 (simple docst
                 "processed": processed_rows,
             },
         )
+
+        # Notify every webhook subscribed to "import.completed" (sent by a
+        # separate Celery task, so a slow receiver can't hold up the import).
+        try:
+            webhook_service.dispatch_event(
+                "import.completed",
+                {"task_id": task_id, "processed_rows": processed_rows},
+            )
+        except Exception as exc:  # noqa: BLE001 – a webhook problem must not fail the import
+            print(f"Could not enqueue import.completed webhooks: {exc}")
 
         # Clean up file content from Redis after successful processing
         redis_client_binary.delete(file_key)
