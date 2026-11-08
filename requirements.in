@@ -1,0 +1,19 @@
+# Direct runtime dependencies. Edit this file, then regenerate the lockfile:
+#   uv pip compile requirements.in --universal -p 3.11 -o requirements.txt
+# requirements.txt pins every transitive package too: pinning only these top-level
+# packages wasn't enough (billiard 4.3 silently broke the Celery 5.5 worker pool).
+fastapi==0.121.3
+uvicorn[standard]==0.38.0
+sqlalchemy==2.0.44
+greenlet==3.2.4  # SQLAlchemy's async engine needs it; not auto-installed on every platform
+asyncpg==0.30.0
+alembic==1.17.2
+psycopg2-binary==2.9.11
+pydantic==2.7.1
+pydantic-settings==2.2.1
+python-dotenv==1.2.1
+redis==7.1.0
+celery==5.5.3
+billiard<4.3  # billiard 4.3 crashes the Celery 5.5 worker pool ("not enough values to unpack")
+python-multipart==0.0.20
+requests==2.32.5

@@ -1,0 +1,12 @@
+# Keep the Docker image to just what the app needs at runtime.
+.git
+.env
+.env.*
+**/.DS_Store
+**/__pycache__
+*.py[cod]
+venv/
+.venv/
+csv/
+planning/
+*.md
