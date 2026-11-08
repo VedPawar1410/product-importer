@@ -19,7 +19,7 @@ def upload(client, csv_text: str) -> dict:
 
 
 def list_products(client, **params) -> dict:
-    return client.get("/products/", params={"limit": 100, **params}).json()
+    return client.get("/products", params={"limit": 100, **params}).json()
 
 
 def test_health(client):
@@ -75,18 +75,18 @@ def test_uploaded_file_is_deleted_after_import(client):
 
 
 def test_create_update_delete_and_conflicts(client):
-    r = client.post("/products/", json={"sku": "P1", "name": "One", "price": 9.5})
+    r = client.post("/products", json={"sku": "P1", "name": "One", "price": 9.5})
     assert r.status_code == 201
     pid = r.json()["id"]
 
-    assert client.post("/products/", json={"sku": "p1", "name": "dup"}).status_code == 409
-    assert client.post("/products/", json={"sku": "  ", "name": "blank"}).status_code == 422
+    assert client.post("/products", json={"sku": "p1", "name": "dup"}).status_code == 409
+    assert client.post("/products", json={"sku": "  ", "name": "blank"}).status_code == 422
 
     r = client.put(f"/products/{pid}", json={"name": "One v2", "active": False})
     assert r.status_code == 200
     assert r.json()["name"] == "One v2" and r.json()["active"] is False
 
-    other = client.post("/products/", json={"sku": "P2", "name": "Two"}).json()["id"]
+    other = client.post("/products", json={"sku": "P2", "name": "Two"}).json()["id"]
     assert client.put(f"/products/{other}", json={"sku": "P1"}).status_code == 409
 
     assert client.delete(f"/products/{pid}").status_code == 204
@@ -97,7 +97,7 @@ def test_filters_and_pagination(client):
     rows = "".join(f"SKU-{i:03d},Item {i},,1,{'false' if i % 5 == 0 else 'true'}\n" for i in range(25))
     upload(client, HEADER + rows)
 
-    page = client.get("/products/", params={"limit": 10, "offset": 20}).json()
+    page = client.get("/products", params={"limit": 10, "offset": 20}).json()
     assert page["total"] == 25 and len(page["items"]) == 5
 
     assert list_products(client, active="false")["total"] == 5
@@ -140,22 +140,22 @@ def webhook_receiver():
 
 def test_webhook_fires_when_import_completes(client, webhook_receiver):
     url, received = webhook_receiver
-    assert client.post("/webhooks/", json={"event": "import.completed", "url": url}).status_code == 201
+    assert client.post("/webhooks", json={"event": "import.completed", "url": url}).status_code == 201
 
     status = upload(client, HEADER + "W1,webhook,,1,true\n")
 
     assert received == [
         {"event": "import.completed", "data": {"task_id": status["task_id"], "processed_rows": 1}}
     ]
-    assert len(client.get("/webhooks/").json()) == 1  # importing doesn't create junk webhook rows
+    assert len(client.get("/webhooks").json()) == 1  # importing doesn't create junk webhook rows
 
 
 def test_webhook_test_endpoint_and_delete(client, webhook_receiver):
     url, received = webhook_receiver
-    hook = client.post("/webhooks/", json={"event": "ping", "url": url}).json()
+    hook = client.post("/webhooks", json={"event": "ping", "url": url}).json()
 
     assert client.post("/webhooks/test/ping").status_code == 202
     assert received == [{"event": "ping", "data": {"hello": "world"}}]
 
     assert client.delete(f"/webhooks/{hook['id']}").status_code == 204
-    assert client.get("/webhooks/").json() == []
+    assert client.get("/webhooks").json() == []

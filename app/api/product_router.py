@@ -37,7 +37,8 @@ def _apply_filters(stmt, sku: str | None, name: str | None, active: bool | None)
 # ---------------------------------------------------------------------------
 
 
-@router.get("/", response_model=PaginatedProducts)
+# "" not "/": path /products (no trailing slash) – see the note in webhook_router.py.
+@router.get("", response_model=PaginatedProducts)
 async def list_products(
     *,
     db: AsyncSession = Depends(get_async_db),
@@ -71,7 +72,7 @@ def _duplicate_sku(sku: str | None) -> HTTPException:
     return HTTPException(status.HTTP_409_CONFLICT, f"A product with SKU '{sku}' already exists (SKUs ignore case)")
 
 
-@router.post("/", response_model=Product, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=Product, status_code=status.HTTP_201_CREATED)
 async def create_product(*, db: AsyncSession = Depends(get_async_db), product: ProductCreate):
     new_product = ProductModel(**product.model_dump(exclude_unset=True))
     db.add(new_product)

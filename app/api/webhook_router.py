@@ -17,7 +17,11 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("/", response_model=List[WebhookSchema])
+# Collection routes use "" (path /webhooks, no trailing slash) to match the
+# frontend. With "/" the path is /webhooks/, and a request for /webhooks is
+# swallowed by the static-files mount at "/" (a 404) before FastAPI's
+# trailing-slash redirect can run.
+@router.get("", response_model=List[WebhookSchema])
 async def list_webhooks(db=Depends(get_db)):
     """Return all registered webhooks."""
 
@@ -25,7 +29,7 @@ async def list_webhooks(db=Depends(get_db)):
 
 
 @router.post(
-    "/",
+    "",
     response_model=WebhookSchema,
     status_code=status.HTTP_201_CREATED,
 )
