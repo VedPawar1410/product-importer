@@ -71,7 +71,7 @@ There's no real dataset; the importer works on any CSV in this shape:
 | | Before (code as found, Nov 2026) | After |
 |---|---|---|
 | Live site | Down: its free Render Postgres had been deleted and the app crashed on startup | Up (Render + Neon) |
-| Fresh build | Crashed: unpinned SQLAlchemy 2.1 / billiard 4.3 | 49 packages locked, reproducible |
+| Fresh build | Crashed: unpinned SQLAlchemy 2.1 / billiard 4.3 | 46 packages locked, reproducible |
 | Products & Webhooks pages | "Failed to load" (404) on every visit | Work |
 | API probe (18 checks) | 12 / 18 | 16 / 18 at the end of the rebuild (the 2 left: webhook last status, since built in Layer 4, and a webhook update endpoint, still not built) |
 | SKU `abc` vs `ABC` | Two separate products | One product |
@@ -226,7 +226,7 @@ Built in layers. Each layer records what went wrong and the lesson.
 
 | # | Decision | Why |
 |---|---|---|
-| 3.1 | Lock all 49 packages with `uv pip compile` (`requirements.in` → `requirements.txt`), with an explicit `billiard<4.3` | Reproducible builds; top-level pins alone still broke the worker (fixes 1.7) |
+| 3.1 | Lock all 46 packages with `uv pip compile` (`requirements.in` → `requirements.txt`), with an explicit `billiard<4.3` | Reproducible builds; top-level pins alone still broke the worker (fixes 1.7) |
 | 3.2 | Functional unique index on `lower(sku)` + `ON CONFLICT (lower(sku))`, 409 on API duplicates | Case-insensitive uniqueness everywhere (fixes 1.2) |
 | 3.3 | Dispatch `import.completed` via the existing webhook task; count and show failed rows | Features that silently didn't work (fixes 1.3, 1.4) |
 | 3.4 | Fixed route order, no-slash collection routes, `ORDER BY id DESC` | Bulk delete, the UI pages and stable paging (fixes 1.1, 1.5, 1.6) |
