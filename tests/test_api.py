@@ -236,7 +236,7 @@ def test_unreachable_url_is_logged_as_failure(client):
 
     assert result["success"] is False
     assert result["status_code"] is None
-    assert "Connection" in result["error"]
+    assert result["error"] == "Connection refused by 127.0.0.1"  # readable, not urllib3's repr
 
 
 def test_deleting_a_webhook_removes_its_delivery_log(client, webhook_receiver):

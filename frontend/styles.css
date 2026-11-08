@@ -630,6 +630,22 @@ main {
   font: 12.5px/1.6 var(--font-mono); color: var(--text); overflow-x: auto;
 }
 
+.cell-delivery { white-space: nowrap; }
+.cell-delivery .pill { margin-right: 8px; font-family: var(--font-mono); font-size: 12px; }
+
+/* delivery history dialog */
+.history-url { margin: 4px 0 0; font: 12.5px var(--font-mono); color: var(--subtle); overflow-wrap: anywhere; }
+.history-body { max-height: min(60vh, 520px); overflow-y: auto; gap: 8px; }
+.history-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.history-item {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
+  animation: rise 0.3s var(--ease) both;
+}
+.history-item .pill { font-family: var(--font-mono); font-size: 12px; }
+.history-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13.5px; }
+.history-error { color: var(--danger); font-size: 12.5px; overflow-wrap: anywhere; }
+
 /* --- Modal (native <dialog>) --------------------------------------------- */
 
 dialog.modal {
@@ -641,6 +657,7 @@ dialog.modal {
   color: var(--text);
   box-shadow: var(--shadow-lg);
 }
+dialog.modal.modal-wide { width: min(640px, calc(100vw - 32px)); }
 dialog.modal[open] { animation: pop 0.22s var(--ease); }
 dialog.modal::backdrop { background: rgba(20, 19, 17, 0.38); backdrop-filter: blur(3px); }
 @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } }

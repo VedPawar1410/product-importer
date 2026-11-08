@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import time
 from typing import Any, Sequence
+from urllib.parse import urlsplit
 
 import requests
 from sqlalchemy.orm import Session
@@ -110,7 +111,7 @@ def send_once(
     except requests.Timeout:
         error = f"Timed out after {TIMEOUT_SECONDS}s"
     except requests.RequestException as exc:
-        error = f"{type(exc).__name__}: {exc}"[:300]
+        error = describe_error(exc, webhook.url)
     elapsed_ms = (time.perf_counter() - started) * 1000
 
     delivery = WebhookDelivery(
@@ -126,6 +127,26 @@ def send_once(
     db.commit()
     db.refresh(delivery)
     return delivery
+
+
+def describe_error(exc: requests.RequestException, url: str) -> str:
+    """A short, human-readable reason instead of urllib3's long repr.
+
+    (urllib3's text says "Max retries exceeded", which is about its own
+    connection pool, not our retries, so it would also mislead.)
+    """
+
+    host = urlsplit(url).hostname or url
+    text = str(exc)
+    if isinstance(exc, requests.exceptions.SSLError):
+        return f"TLS/SSL error with {host}"
+    if isinstance(exc, requests.ConnectionError):
+        if any(s in text for s in ("NameResolutionError", "Name or service not known", "nodename nor servname")):
+            return f"Could not resolve host {host}"
+        if "Connection refused" in text or "Errno 111" in text or "Errno 61" in text:
+            return f"Connection refused by {host}"
+        return f"Could not connect to {host}"
+    return f"{type(exc).__name__}: {text}"[:300]
 
 
 def is_retryable(delivery: WebhookDelivery) -> bool:

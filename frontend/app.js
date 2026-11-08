@@ -20,6 +20,7 @@
     search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
     alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>',
     link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+    history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>',
   };
 
   function escapeHtml(value) {
@@ -545,11 +546,20 @@
     let hooks = [];
     let editing = null;
 
+    /** "200 · 143 ms" in green, the failure reason in red, or "Never". */
+    function deliveryPill(d) {
+      if (!d) return '<span class="pill pill-muted">Never</span>';
+      const ms = d.response_ms == null ? '' : ` · ${nf.format(Math.round(d.response_ms))} ms`;
+      if (d.success) return `<span class="pill pill-success">${d.status_code}${ms}</span>`;
+      const label = d.status_code ?? (d.error?.startsWith('Timed out') ? 'timeout' : 'no response');
+      return `<span class="pill pill-danger" title="${escapeHtml(d.error)}">${escapeHtml(label)}${d.status_code ? ms : ''}</span>`;
+    }
+
     async function load() {
       if (!hooks.length) {
         rows.innerHTML = Array.from({ length: 3 }, () => `
           <tr><td><span class="skeleton" style="width: 120px"></span></td><td><span class="skeleton" style="width: 260px"></span></td>
-          <td><span class="skeleton" style="width: 60px"></span></td><td></td></tr>`).join('');
+          <td><span class="skeleton" style="width: 90px"></span></td><td><span class="skeleton" style="width: 60px"></span></td><td></td></tr>`).join('');
       }
       try {
         hooks = await api('/webhooks');
@@ -572,10 +582,12 @@
         <tr>
           <td><span class="tag">${escapeHtml(h.event)}</span></td>
           <td class="cell-url" title="${escapeHtml(h.url)}">${escapeHtml(h.url)}</td>
+          <td class="cell-delivery">${deliveryPill(h.last_delivery)}${h.last_delivery ? `<span class="cell-muted">${timeAgo(h.last_delivery.created_at)}</span>` : ''}</td>
           <td class="cell-muted">${h.created_at ? timeAgo(h.created_at) : '—'}</td>
           <td class="actions">
             <div class="row-actions">
               <button type="button" class="btn btn-secondary btn-sm" data-test="${h.id}">${ICON.send} Test</button>
+              <button type="button" class="icon-btn" data-history="${h.id}" aria-label="Delivery history">${ICON.history}</button>
               <button type="button" class="icon-btn" data-edit="${h.id}" aria-label="Edit webhook">${ICON.edit}</button>
               <button type="button" class="icon-btn danger" data-delete="${h.id}" aria-label="Delete webhook">${ICON.trash}</button>
             </div>
@@ -592,19 +604,25 @@
     }
 
     rows.addEventListener('click', async (e) => {
-      const btn = e.target.closest('[data-test], [data-edit], [data-delete]');
+      const btn = e.target.closest('[data-test], [data-history], [data-edit], [data-delete]');
       if (!btn) return;
-      const hook = hooks.find((h) => String(h.id) === (btn.dataset.test || btn.dataset.edit || btn.dataset.delete));
+      const id = btn.dataset.test || btn.dataset.history || btn.dataset.edit || btn.dataset.delete;
+      const hook = hooks.find((h) => String(h.id) === id);
 
       if (btn.dataset.test) {
+        // Sent synchronously by the API, so this is the receiver's real answer.
         await withBusy(btn, 'Sending', async () => {
           try {
-            await api(`/webhooks/test/${encodeURIComponent(hook.event)}`, { method: 'POST' });
-            toast(`Test "${hook.event}" event queued for delivery to every subscribed URL.`, 'success', 5000);
+            const d = await api(`/webhooks/${hook.id}/test`, { method: 'POST' });
+            if (d.success) toast(`Delivered · ${d.status_code} · ${Math.round(d.response_ms)} ms`);
+            else toast(`Delivery failed: ${d.error}`, 'error', 6000);
+            load();
           } catch (err) {
             toast(err.message, 'error');
           }
         });
+      } else if (btn.dataset.history) {
+        openHistory(hook);
       } else if (btn.dataset.edit) {
         openModal(hook);
       } else {
@@ -619,6 +637,29 @@
         }
       }
     });
+
+    async function openHistory(hook) {
+      const body = $('#historyBody');
+      $('#historyUrl').textContent = `${hook.event} → ${hook.url}`;
+      body.innerHTML = '<span class="skeleton" style="width: 70%"></span><span class="skeleton" style="width: 55%"></span>';
+      $('#historyModal').showModal();
+      try {
+        const deliveries = await api(`/webhooks/${hook.id}/deliveries?limit=50`);
+        body.innerHTML = deliveries.length
+          ? `<ol class="history-list">${deliveries.map((d) => `
+              <li class="history-item">
+                ${deliveryPill(d)}
+                <div class="history-meta">
+                  <span><span class="mono">${escapeHtml(d.event)}</span> · attempt ${d.attempt}</span>
+                  ${d.error ? `<span class="history-error">${escapeHtml(d.error)}</span>` : ''}
+                </div>
+                <time class="cell-muted" datetime="${escapeHtml(d.created_at)}" title="${escapeHtml(new Date(d.created_at).toLocaleString())}">${timeAgo(d.created_at)}</time>
+              </li>`).join('')}</ol>`
+          : '<p class="modal-text">No deliveries yet. Use Test, or run an import.</p>';
+      } catch (err) {
+        body.innerHTML = `<p class="form-error">${escapeHtml(err.message)}</p>`;
+      }
+    }
 
     function openModal(hook = null) {
       editing = hook;
