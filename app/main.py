@@ -25,41 +25,6 @@ async def health_check():
     return {"status": "ok"}
 
 
-@app.get("/debug/config")
-async def debug_config():
-    """Debug endpoint to check configuration"""
-    from .core.config import settings
-    import os
-    
-    return {
-        "database_url_set": bool(settings.database_url),
-        "database_url_prefix": settings.database_url[:20] if settings.database_url else None,
-        "celery_broker_url_set": bool(settings.celery_broker_url),
-        "celery_broker_url_prefix": settings.celery_broker_url[:20] if settings.celery_broker_url else None,
-        "env_vars": {
-            "DATABASE_URL": bool(os.getenv("DATABASE_URL")),
-            "POSTGRES_URL": bool(os.getenv("POSTGRES_URL")),
-            "REDIS_URL": bool(os.getenv("REDIS_URL")),
-            "CELERY_BROKER_URL": bool(os.getenv("CELERY_BROKER_URL")),
-            "PORT": os.getenv("PORT", "not set"),
-        }
-    }
-
-
-@app.get("/debug/redis")
-async def debug_redis():
-    """Test Redis connection"""
-    from .core.config import settings
-    from redis import Redis
-    
-    try:
-        redis_client = Redis.from_url(settings.celery_broker_url, decode_responses=True)
-        redis_client.ping()
-        return {"status": "ok", "message": "Redis connection successful"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
 # -------------------------------
 # STATIC FRONTEND CONFIG
 # -------------------------------

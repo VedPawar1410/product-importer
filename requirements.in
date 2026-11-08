@@ -7,7 +7,6 @@ uvicorn[standard]==0.38.0
 sqlalchemy==2.0.44
 greenlet==3.2.4  # SQLAlchemy's async engine needs it; not auto-installed on every platform
 asyncpg==0.30.0
-alembic==1.17.2
 psycopg2-binary==2.9.11
 pydantic==2.7.1
 pydantic-settings==2.2.1
