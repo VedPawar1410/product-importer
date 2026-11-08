@@ -1,127 +1,125 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Product Importer - Webhooks</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Webhooks · Product Importer</title>
+  <meta name="description" content="Get notified by HTTP POST when an import completes.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c1b19'/%3E%3Cpath d='M9 12l7-4 7 4v8l-7 4-7-4z M9 12l7 4 7-4 M16 16v8' fill='none' stroke='%23f6f5f1' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..700&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-    <div class="container">
-        <header>
-            <h1>Product Importer</h1>
-            <nav>
-                <a href="/">Upload CSV</a>
-                <a href="products.html">Products</a>
-                <a href="webhooks.html" class="active">Webhooks</a>
-            </nav>
-        </header>
+<body data-page="webhooks">
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg></span>
+        Product Importer
+      </a>
+      <nav class="nav" aria-label="Main">
+        <a href="/">Import</a>
+        <a href="/products.html">Products</a>
+        <a href="/webhooks.html" aria-current="page">Webhooks</a>
+      </nav>
+      <div class="header-links">
+        <a href="/docs">API docs</a>
+        <a href="https://github.com/VedPawar1410/product-importer">GitHub</a>
+      </div>
+    </div>
+  </header>
 
-        <main>
-            <section class="webhooks-section">
-                <div class="section-header">
-                    <h2>Webhook Management</h2>
-                    <div class="header-actions">
-                        <button id="createWebhookBtn" class="btn-primary">+ Create Webhook</button>
-                    </div>
-                </div>
-
-                <p class="section-description">
-                    Configure webhooks to receive notifications when specific events occur in the system.
-                </p>
-
-                <!-- Alert/Message Area -->
-                <div id="webhookAlertSection" class="alert-section hidden">
-                    <div id="webhookAlertMessage" class="alert-message"></div>
-                </div>
-
-                <!-- Test Result Area -->
-                <div id="testResultSection" class="test-result-section hidden">
-                    <div class="test-result-header">
-                        <h4>Test Result</h4>
-                        <button class="close-btn" id="closeTestResultBtn">&times;</button>
-                    </div>
-                    <div id="testResultContent" class="test-result-content"></div>
-                </div>
-
-                <!-- Webhooks Table -->
-                <div class="table-wrapper">
-                    <table class="webhooks-table">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Event Type</th>
-                                <th>URL</th>
-                                <th>Created At</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="webhooksTableBody">
-                            <tr>
-                                <td colspan="5" class="loading-cell">Loading webhooks...</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        </main>
-
-        <footer>
-            <p>&copy; 2025 Product Importer</p>
-        </footer>
+  <main>
+    <div class="page-head reveal">
+      <div>
+        <p class="eyebrow">Integrations</p>
+        <h1 class="page-title">Webhooks <span class="count-badge" id="webhookBadge">…</span></h1>
+        <p class="page-sub">Register URLs that should hear about events. Deliveries run in the background, so a slow receiver never holds up an import.</p>
+      </div>
+      <button type="button" class="btn btn-primary" id="newWebhookBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        New webhook
+      </button>
     </div>
 
-    <!-- Webhook Modal (Create/Edit) -->
-    <div id="webhookModal" class="modal hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="webhookModalTitle">Create Webhook</h3>
-                <button class="modal-close" id="closeWebhookModalBtn">&times;</button>
-            </div>
-            <form id="webhookForm">
-                <input type="hidden" id="webhookId">
-                
-                <div class="form-group">
-                    <label for="webhookEvent">Event Type *</label>
-                    <input 
-                        type="text" 
-                        id="webhookEvent" 
-                        required
-                        placeholder="e.g., import.completed"
-                    >
-                    <small class="form-help">
-                        Event identifier (e.g., import.completed, product.created)
-                    </small>
-                </div>
+    <div class="card event-explainer reveal reveal-2">
+      <span class="ex-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3 4 14h7l-1 7 9-11h-7z"/></svg></span>
+      <div style="min-width: 0">
+        <p>When an import finishes, every URL subscribed to <span class="tag">import.completed</span> receives a <code>POST</code> like this:</p>
+<pre>{
+  "event": "import.completed",
+  "data": { "task_id": "9f2c…", "processed_rows": 500000 }
+}</pre>
+      </div>
+    </div>
 
-                <div class="form-group">
-                    <label for="webhookUrl">URL *</label>
-                    <input 
-                        type="url" 
-                        id="webhookUrl" 
-                        required
-                        placeholder="https://example.com/webhook"
-                    >
-                    <small class="form-help">
-                        The endpoint that will receive POST requests
-                    </small>
-                </div>
+    <section class="card reveal reveal-3" aria-label="Registered webhooks">
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>URL</th>
+              <th>Created</th>
+              <th class="actions"><span hidden>Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="webhookRows"></tbody>
+        </table>
+      </div>
+      <div id="webhooksEmpty" hidden></div>
+    </section>
+  </main>
 
-                <div class="modal-footer">
-                    <button type="button" class="btn-secondary" id="cancelWebhookModalBtn">Cancel</button>
-                    <button type="submit" class="btn-primary">Save Webhook</button>
-                </div>
-            </form>
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span>FastAPI · Celery · Redis · Postgres</span>
+      <a href="https://github.com/VedPawar1410/product-importer">Source on GitHub</a>
+    </div>
+  </footer>
+
+  <!-- Create / edit webhook -->
+  <dialog class="modal" id="webhookModal" aria-labelledby="webhookModalTitle">
+    <form id="webhookForm" novalidate>
+      <div class="modal-head">
+        <h2 id="webhookModalTitle">New webhook</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-error" id="webhookFormError" hidden></div>
+        <div class="field">
+          <label for="webhookEvent">Event</label>
+          <input class="input mono" id="webhookEvent" list="eventOptions" value="import.completed" required autocomplete="off">
+          <datalist id="eventOptions"><option value="import.completed"></option></datalist>
+          <span class="field-hint">Imports send <code>import.completed</code>. Any other name works with the Test button.</span>
         </div>
-    </div>
+        <div class="field">
+          <label for="webhookUrl">Endpoint URL</label>
+          <input class="input mono" id="webhookUrl" type="url" placeholder="https://example.com/hooks/products" required autocomplete="off">
+        </div>
+        <p class="field-hint" id="webhookEditNote" hidden>Saving replaces this webhook with a new one (the API has no update endpoint).</p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="webhookSubmit">Save webhook</button>
+      </div>
+    </form>
+  </dialog>
 
-    <script src="app.js"></script>
-    <script>
-        // Initialize webhooks page when DOM is loaded
-        if (document.getElementById('webhooksTableBody')) {
-            initializeWebhooksPage();
-        }
-    </script>
+  <!-- Confirmation -->
+  <dialog class="modal" id="confirmModal" aria-labelledby="confirmTitle">
+    <div class="modal-head"><h2 id="confirmTitle">Are you sure?</h2></div>
+    <div class="modal-body"><p class="modal-text" id="confirmText"></p></div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+      <button type="button" class="btn btn-danger" id="confirmBtn">Delete</button>
+    </div>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <script src="app.js"></script>
 </body>
 </html>
-

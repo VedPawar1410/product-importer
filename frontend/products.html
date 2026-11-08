@@ -1,152 +1,161 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Product Importer - Products</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Products · Product Importer</title>
+  <meta name="description" content="Browse, filter and edit the imported product catalog.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c1b19'/%3E%3Cpath d='M9 12l7-4 7 4v8l-7 4-7-4z M9 12l7 4 7-4 M16 16v8' fill='none' stroke='%23f6f5f1' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..700&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-    <div class="container">
-        <header>
-            <h1>Product Importer</h1>
-            <nav>
-                <a href="/">Upload CSV</a>
-                <a href="products.html" class="active">Products</a>
-                <a href="webhooks.html">Webhooks</a>
-            </nav>
-        </header>
+<body data-page="products">
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg></span>
+        Product Importer
+      </a>
+      <nav class="nav" aria-label="Main">
+        <a href="/">Import</a>
+        <a href="/products.html" aria-current="page">Products</a>
+        <a href="/webhooks.html">Webhooks</a>
+      </nav>
+      <div class="header-links">
+        <a href="/docs">API docs</a>
+        <a href="https://github.com/VedPawar1410/product-importer">GitHub</a>
+      </div>
+    </div>
+  </header>
 
-        <main>
-            <section class="products-section">
-                <div class="section-header">
-                    <h2>Product Management</h2>
-                    <div class="header-actions">
-                        <button id="createProductBtn" class="btn-primary">+ Create Product</button>
-                        <button id="deleteAllBtn" class="btn-danger">Delete All Products</button>
-                    </div>
-                </div>
-
-                <!-- Alert/Message Area -->
-                <div id="alertSection" class="alert-section hidden">
-                    <div id="alertMessage" class="alert-message"></div>
-                </div>
-
-                <!-- Filter Bar -->
-                <div class="filter-bar">
-                    <div class="filter-group">
-                        <label for="filterSku">SKU:</label>
-                        <input type="text" id="filterSku" placeholder="Filter by SKU">
-                    </div>
-                    <div class="filter-group">
-                        <label for="filterName">Name:</label>
-                        <input type="text" id="filterName" placeholder="Filter by name">
-                    </div>
-                    <div class="filter-group">
-                        <label for="filterActive">Status:</label>
-                        <select id="filterActive">
-                            <option value="">All</option>
-                            <option value="true">Active</option>
-                            <option value="false">Inactive</option>
-                        </select>
-                    </div>
-                    <button id="applyFiltersBtn" class="btn-secondary">Apply Filters</button>
-                    <button id="clearFiltersBtn" class="btn-secondary">Clear Filters</button>
-                </div>
-
-                <!-- Products Table -->
-                <div class="table-wrapper">
-                    <table class="products-table">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>SKU</th>
-                                <th>Name</th>
-                                <th>Description</th>
-                                <th>Price</th>
-                                <th>Active</th>
-                                <th>Created At</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="productsTableBody">
-                            <tr>
-                                <td colspan="8" class="loading-cell">Loading products...</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Pagination Controls -->
-                <div class="pagination-controls">
-                    <div class="pagination-info">
-                        <span id="paginationInfo">Page 1 of 1 (0 products)</span>
-                    </div>
-                    <div class="pagination-buttons">
-                        <button id="prevPageBtn" class="btn-secondary" disabled>Previous</button>
-                        <button id="nextPageBtn" class="btn-secondary" disabled>Next</button>
-                    </div>
-                </div>
-            </section>
-        </main>
-
-        <footer>
-            <p>&copy; 2025 Product Importer</p>
-        </footer>
+  <main>
+    <div class="page-head reveal">
+      <div>
+        <p class="eyebrow">Catalog</p>
+        <h1 class="page-title">Products <span class="count-badge" id="totalBadge">…</span></h1>
+        <p class="page-sub">Everything you've imported. Filter, edit a product, or clear out what you no longer need.</p>
+      </div>
+      <div style="display: flex; gap: 10px">
+        <a class="btn btn-secondary" href="/">Import CSV</a>
+        <button type="button" class="btn btn-primary" id="newProductBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          New product
+        </button>
+      </div>
     </div>
 
-    <!-- Product Modal (Create/Edit) -->
-    <div id="productModal" class="modal hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="modalTitle">Create Product</h3>
-                <button class="modal-close" id="closeModalBtn">&times;</button>
-            </div>
-            <form id="productForm">
-                <input type="hidden" id="productId">
-                
-                <div class="form-group">
-                    <label for="productSku">SKU *</label>
-                    <input type="text" id="productSku" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="productName">Name *</label>
-                    <input type="text" id="productName" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="productDescription">Description</label>
-                    <textarea id="productDescription" rows="3"></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label for="productPrice">Price</label>
-                    <input type="number" id="productPrice" step="0.01" min="0">
-                </div>
-
-                <div class="form-group checkbox-group">
-                    <label>
-                        <input type="checkbox" id="productActive" checked>
-                        <span>Active</span>
-                    </label>
-                </div>
-
-                <div class="modal-footer">
-                    <button type="button" class="btn-secondary" id="cancelModalBtn">Cancel</button>
-                    <button type="submit" class="btn-primary">Save Product</button>
-                </div>
-            </form>
+    <section class="card reveal reveal-2" aria-label="Product list">
+      <div class="toolbar">
+        <div class="input-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input class="input" id="filterName" type="search" placeholder="Search by name" aria-label="Search by name" autocomplete="off">
         </div>
-    </div>
+        <div class="input-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>
+          <input class="input mono" id="filterSku" type="search" placeholder="Exact SKU" aria-label="Exact SKU" autocomplete="off">
+        </div>
+        <div class="segmented" role="group" aria-label="Status">
+          <button type="button" data-active="" aria-pressed="true">All</button>
+          <button type="button" data-active="true" aria-pressed="false">Active</button>
+          <button type="button" data-active="false" aria-pressed="false">Inactive</button>
+        </div>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-danger-ghost btn-sm" id="bulkDeleteBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3"/></svg>
+          <span id="bulkDeleteLabel">Delete all</span>
+        </button>
+      </div>
 
-    <script src="app.js"></script>
-    <script>
-        // Initialize products page when DOM is loaded
-        if (document.getElementById('productsTableBody')) {
-            initializeProductsPage();
-        }
-    </script>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Product</th>
+              <th class="num">Price</th>
+              <th>Status</th>
+              <th>Updated</th>
+              <th class="actions"><span hidden>Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="productRows"></tbody>
+        </table>
+      </div>
+      <div id="productsEmpty" hidden></div>
+
+      <div class="pagination" id="pagination" hidden>
+        <span id="pageSummary"></span>
+        <div class="pager">
+          <button type="button" class="btn btn-secondary btn-sm" id="prevPage" aria-label="Previous page">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <span id="pageLabel" class="mono"></span>
+          <button type="button" class="btn btn-secondary btn-sm" id="nextPage" aria-label="Next page">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span>FastAPI · Celery · Redis · Postgres</span>
+      <a href="https://github.com/VedPawar1410/product-importer">Source on GitHub</a>
+    </div>
+  </footer>
+
+  <!-- Create / edit product -->
+  <dialog class="modal" id="productModal" aria-labelledby="productModalTitle">
+    <form id="productForm" novalidate>
+      <div class="modal-head">
+        <h2 id="productModalTitle">New product</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-error" id="productFormError" hidden></div>
+        <div class="row">
+          <div class="field">
+            <label for="productSku">SKU</label>
+            <input class="input mono" id="productSku" required autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="productPrice">Price</label>
+            <input class="input mono" id="productPrice" type="number" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+        <div class="field">
+          <label for="productName">Name</label>
+          <input class="input" id="productName" required autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="productDescription">Description</label>
+          <textarea class="textarea" id="productDescription" rows="3"></textarea>
+        </div>
+        <label class="switch"><input type="checkbox" id="productActive" checked> Active</label>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="productSubmit">Save product</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Confirmation -->
+  <dialog class="modal" id="confirmModal" aria-labelledby="confirmTitle">
+    <div class="modal-head"><h2 id="confirmTitle">Are you sure?</h2></div>
+    <div class="modal-body"><p class="modal-text" id="confirmText"></p></div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+      <button type="button" class="btn btn-danger" id="confirmBtn">Delete</button>
+    </div>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <script src="app.js"></script>
 </body>
 </html>
-

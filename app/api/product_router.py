@@ -50,7 +50,10 @@ async def list_products(
 ):
     stmt = select(ProductModel)
     stmt = _apply_filters(stmt, sku, name, active)
-    stmt = stmt.offset(offset).limit(limit)
+    # A stable order is required for OFFSET paging: without ORDER BY, Postgres may
+    # return rows in any order and pages can repeat or skip rows. Newest first,
+    # served straight from the primary-key index.
+    stmt = stmt.order_by(ProductModel.id.desc()).offset(offset).limit(limit)
 
     result = await db.execute(stmt)
     items = result.scalars().all()

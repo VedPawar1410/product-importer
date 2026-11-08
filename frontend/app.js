@@ -1,1240 +1,670 @@
-// Global state
-let currentTaskId = null;
-let pollingInterval = null;
+/* Product Importer frontend.
+   One script for three pages; <body data-page="..."> picks which part runs.
+   Plain JS, no build step: FastAPI serves these files as-is. */
+(() => {
+  'use strict';
 
-// DOM elements
-const csvFileInput = document.getElementById('csvFile');
-const fileNameSpan = document.getElementById('fileName');
-const uploadBtn = document.getElementById('uploadBtn');
-const progressSection = document.getElementById('progressSection');
-const progressBar = document.getElementById('progressBar');
-const progressText = document.getElementById('progressText');
-const statusSection = document.getElementById('statusSection');
-const statusMessage = document.getElementById('statusMessage');
-const statusDetails = document.getElementById('statusDetails');
+  // --- Small helpers ---------------------------------------------------------
 
-// Initialize event listeners
-if (csvFileInput && uploadBtn) {
-    csvFileInput.addEventListener('change', handleFileSelect);
-    uploadBtn.addEventListener('click', uploadCSVFile);
-}
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+  const nf = new Intl.NumberFormat();
+  const price = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/**
- * Handle file selection
- */
-function handleFileSelect(event) {
-    const file = event.target.files[0];
-    if (file) {
-        fileNameSpan.textContent = file.name;
-        uploadBtn.disabled = false;
-    } else {
-        fileNameSpan.textContent = 'Choose a CSV file';
-        uploadBtn.disabled = true;
-    }
-}
+  const ICON = {
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
+    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3"/></svg>',
+    send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/></svg>',
+    box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>',
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+    alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>',
+    link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+  };
 
-/**
- * Upload CSV file to the backend
- */
-function uploadCSVFile() {
-    const file = csvFileInput.files[0];
-    
-    if (!file) {
-        setStatus('error', 'Please select a file first.');
-        return;
-    }
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
 
-    if (!file.name.endsWith('.csv')) {
-        setStatus('error', 'Please select a valid CSV file.');
-        return;
-    }
+  function formatBytes(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  }
 
-    // Disable upload button during upload
-    uploadBtn.disabled = true;
-    uploadBtn.textContent = 'Uploading...';
+  function formatDuration(seconds) {
+    if (!Number.isFinite(seconds)) return '–';
+    const s = Math.max(0, Math.round(seconds));
+    const m = Math.floor(s / 60);
+    return m ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+  }
 
-    // Reset UI
-    progressSection.classList.remove('hidden');
-    statusSection.classList.add('hidden');
-    updateProgress(0);
+  function timeAgo(iso) {
+    const secs = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (secs < 60) return 'just now';
+    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+    if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+    if (secs < 86400 * 30) return `${Math.floor(secs / 86400)}d ago`;
+    return new Date(iso).toLocaleDateString();
+  }
 
-    // Create FormData
-    const formData = new FormData();
-    formData.append('file', file);
+  function debounce(fn, ms) {
+    let timer;
+    return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
+  }
 
-    // Create XMLHttpRequest
-    const xhr = new XMLHttpRequest();
-
-    // Track upload progress
-    xhr.upload.onprogress = function(event) {
-        if (event.lengthComputable) {
-            const percentComplete = (event.loaded / event.total) * 100;
-            updateProgress(percentComplete);
-        }
+  // Count smoothly from the previous value: imports report progress per batch
+  // of 1,000 rows, and easing the numbers makes those jumps feel continuous.
+  function tweenNumber(el, to) {
+    const from = Number(el.dataset.value || 0);
+    el.dataset.value = to;
+    if (from === to) { el.textContent = nf.format(to); return; }
+    const start = performance.now();
+    const step = (now) => {
+      const k = Math.min(1, (now - start) / 650);
+      el.textContent = nf.format(Math.round(from + (to - from) * (1 - (1 - k) ** 3)));
+      if (k < 1) requestAnimationFrame(step);
     };
+    requestAnimationFrame(step);
+  }
 
-    // Handle completion
-    xhr.onload = function() {
-        if (xhr.status === 202) {
-            try {
-                const response = JSON.parse(xhr.responseText);
-                currentTaskId = response.task_id;
-                
-                // Upload complete, now start polling for processing status
-                updateProgress(100);
-                setStatus('info', 'File uploaded successfully. Processing...');
-                
-                // Start polling after a brief delay
-                setTimeout(() => {
-                    pollUploadStatus(currentTaskId);
-                }, 500);
-                
-            } catch (error) {
-                setStatus('error', 'Failed to parse server response.');
-                resetUploadButton();
-            }
-        } else {
-            try {
-                const errorResponse = JSON.parse(xhr.responseText);
-                setStatus('error', `Upload failed: ${errorResponse.detail || 'Unknown error'}`);
-            } catch (error) {
-                setStatus('error', `Upload failed with status: ${xhr.status}`);
-            }
-            resetUploadButton();
-        }
-    };
+  // --- Toasts, dialogs, busy buttons -----------------------------------------
 
-    // Handle network errors
-    xhr.onerror = function() {
-        setStatus('error', 'Network error occurred. Please check your connection and try again.');
-        resetUploadButton();
-    };
-
-    // Handle timeout
-    xhr.ontimeout = function() {
-        setStatus('error', 'Upload timed out. Please try again.');
-        resetUploadButton();
-    };
-
-    // Configure and send request
-    xhr.open('POST', '/upload/start', true);
-    xhr.timeout = 300000; // 5 minutes timeout
-    xhr.send(formData);
-}
-
-/**
- * Poll upload status from the backend
- * @param {string} taskId - The task ID to poll
- */
-function pollUploadStatus(taskId) {
-    // Clear any existing polling interval
-    if (pollingInterval) {
-        clearInterval(pollingInterval);
-    }
-
-    // Function to fetch status
-    const fetchStatus = () => {
-        const xhr = new XMLHttpRequest();
-        
-        xhr.onload = function() {
-            if (xhr.status === 200) {
-                try {
-                    const response = JSON.parse(xhr.responseText);
-                    const status = response.status.status;
-                    const progress = response.progress;
-                    
-                    // Update status display
-                    let message = '';
-                    let details = '';
-                    
-                    if (status === 'QUEUED') {
-                        message = 'Task queued, waiting to start...';
-                        setStatus('info', message);
-                    } else if (status === 'PROCESSING') {
-                        if (progress) {
-                            const total = parseInt(progress.total_rows) || 0;
-                            const processed = parseInt(progress.processed_rows) || 0;
-                            const successful = parseInt(progress.successful_rows) || 0;
-                            const failed = parseInt(progress.failed_rows) || 0;
-                            
-                            message = `Processing: ${processed} / ${total} rows`;
-                            details = `Successful: ${successful} | Failed: ${failed}`;
-                            
-                            // Calculate processing percentage
-                            if (total > 0) {
-                                const percent = (processed / total) * 100;
-                                updateProgress(percent);
-                            }
-                        } else {
-                            message = 'Processing...';
-                        }
-                        setStatus('info', message, details);
-                    } else if (status === 'COMPLETED') {
-                        // Stop polling
-                        clearInterval(pollingInterval);
-                        
-                        if (progress) {
-                            const total = parseInt(progress.total_rows) || 0;
-                            const successful = parseInt(progress.successful_rows) || 0;
-                            const failed = parseInt(progress.failed_rows) || 0;
-                            
-                            message = `Import completed successfully!`;
-                            details = `Total: ${total} | Successful: ${successful} | Failed: ${failed}`;
-                        } else {
-                            message = 'Import completed successfully!';
-                        }
-                        
-                        updateProgress(100);
-                        setStatus('success', message, details);
-                        resetUploadButton();
-                    } else if (status === 'FAILED') {
-                        // Stop polling
-                        clearInterval(pollingInterval);
-                        
-                        const errorMsg = response.status.error || 'Unknown error occurred';
-                        message = `Import failed: ${errorMsg}`;
-                        
-                        if (progress) {
-                            const processed = parseInt(progress.processed_rows) || 0;
-                            const successful = parseInt(progress.successful_rows) || 0;
-                            const failed = parseInt(progress.failed_rows) || 0;
-                            details = `Processed: ${processed} | Successful: ${successful} | Failed: ${failed}`;
-                        }
-                        
-                        setStatus('error', message, details);
-                        resetUploadButton();
-                    }
-                    
-                } catch (error) {
-                    clearInterval(pollingInterval);
-                    setStatus('error', 'Failed to parse status response.');
-                    resetUploadButton();
-                }
-            } else if (xhr.status === 404) {
-                clearInterval(pollingInterval);
-                setStatus('error', 'Task not found. It may have expired.');
-                resetUploadButton();
-            } else {
-                clearInterval(pollingInterval);
-                setStatus('error', `Failed to fetch status: ${xhr.status}`);
-                resetUploadButton();
-            }
-        };
-        
-        xhr.onerror = function() {
-            clearInterval(pollingInterval);
-            setStatus('error', 'Network error while polling status.');
-            resetUploadButton();
-        };
-        
-        xhr.open('GET', `/upload/status/${taskId}`, true);
-        xhr.send();
-    };
-
-    // Initial fetch
-    fetchStatus();
-    
-    // Poll every 1 second
-    pollingInterval = setInterval(fetchStatus, 1000);
-}
-
-/**
- * Update progress bar
- * @param {number} percent - Progress percentage (0-100)
- */
-function updateProgress(percent) {
-    const clampedPercent = Math.min(Math.max(percent, 0), 100);
-    progressBar.style.width = `${clampedPercent}%`;
-    progressText.textContent = `${Math.round(clampedPercent)}%`;
-}
-
-/**
- * Set status message
- * @param {string} type - Status type: 'info', 'success', 'error'
- * @param {string} message - Main status message
- * @param {string} details - Optional details message
- */
-function setStatus(type, message, details = '') {
-    statusSection.classList.remove('hidden');
-    statusMessage.className = `status-message status-${type}`;
-    statusMessage.textContent = message;
-    
-    if (details) {
-        statusDetails.textContent = details;
-        statusDetails.classList.remove('hidden');
-    } else {
-        statusDetails.textContent = '';
-        statusDetails.classList.add('hidden');
-    }
-}
-
-/**
- * Reset upload button to initial state
- */
-function resetUploadButton() {
-    uploadBtn.disabled = false;
-    uploadBtn.textContent = 'Upload';
-    
-    // Reset file input
-    csvFileInput.value = '';
-    fileNameSpan.textContent = 'Choose a CSV file';
-    uploadBtn.disabled = true;
-}
-
-// =============================================================================
-// PRODUCTS PAGE FUNCTIONALITY
-// =============================================================================
-
-// Global state for products page
-let currentPage = 1;
-let currentFilters = {};
-const itemsPerPage = 20;
-
-/**
- * Initialize products page
- */
-function initializeProductsPage() {
-    // DOM elements
-    const createProductBtn = document.getElementById('createProductBtn');
-    const deleteAllBtn = document.getElementById('deleteAllBtn');
-    const applyFiltersBtn = document.getElementById('applyFiltersBtn');
-    const clearFiltersBtn = document.getElementById('clearFiltersBtn');
-    const prevPageBtn = document.getElementById('prevPageBtn');
-    const nextPageBtn = document.getElementById('nextPageBtn');
-    const closeModalBtn = document.getElementById('closeModalBtn');
-    const cancelModalBtn = document.getElementById('cancelModalBtn');
-    const productForm = document.getElementById('productForm');
-    const productModal = document.getElementById('productModal');
-
-    // Event listeners
-    if (createProductBtn) {
-        createProductBtn.addEventListener('click', openCreateModal);
-    }
-    
-    if (deleteAllBtn) {
-        deleteAllBtn.addEventListener('click', deleteAllProducts);
-    }
-    
-    if (applyFiltersBtn) {
-        applyFiltersBtn.addEventListener('click', applyFilters);
-    }
-    
-    if (clearFiltersBtn) {
-        clearFiltersBtn.addEventListener('click', clearFilters);
-    }
-    
-    if (prevPageBtn) {
-        prevPageBtn.addEventListener('click', () => {
-            if (currentPage > 1) {
-                currentPage--;
-                loadProducts(currentPage);
-            }
-        });
-    }
-    
-    if (nextPageBtn) {
-        nextPageBtn.addEventListener('click', () => {
-            currentPage++;
-            loadProducts(currentPage);
-        });
-    }
-    
-    if (closeModalBtn) {
-        closeModalBtn.addEventListener('click', closeProductModal);
-    }
-    
-    if (cancelModalBtn) {
-        cancelModalBtn.addEventListener('click', closeProductModal);
-    }
-    
-    if (productForm) {
-        productForm.addEventListener('submit', submitProductForm);
-    }
-    
-    // Close modal when clicking outside
-    if (productModal) {
-        productModal.addEventListener('click', (e) => {
-            if (e.target === productModal) {
-                closeProductModal();
-            }
-        });
-    }
-    
-    // Load products on page load
-    loadProducts(1);
-}
-
-/**
- * Load products from the backend
- * @param {number} page - Page number to load
- */
-function loadProducts(page = 1) {
-    currentPage = page;
-    
-    // Build query parameters
-    const params = new URLSearchParams();
-    params.append('offset', (page - 1) * itemsPerPage);
-    params.append('limit', itemsPerPage);
-    
-    // Add filters
-    if (currentFilters.sku) {
-        params.append('sku', currentFilters.sku);
-    }
-    if (currentFilters.name) {
-        params.append('name', currentFilters.name);
-    }
-    if (currentFilters.active !== undefined && currentFilters.active !== '') {
-        params.append('active', currentFilters.active);
-    }
-    
-    // Show loading state
-    const tableBody = document.getElementById('productsTableBody');
-    tableBody.innerHTML = '<tr><td colspan="8" class="loading-cell">Loading products...</td></tr>';
-    
-    // Fetch products
-    const xhr = new XMLHttpRequest();
-    
-    xhr.onload = function() {
-        if (xhr.status === 200) {
-            try {
-                const data = JSON.parse(xhr.responseText);
-                renderProductsTable(data);
-                updatePaginationControls(data);
-            } catch (error) {
-                showAlert('error', 'Failed to parse products data.');
-            }
-        } else {
-            showAlert('error', `Failed to load products: ${xhr.status}`);
-            tableBody.innerHTML = '<tr><td colspan="8" class="error-cell">Failed to load products</td></tr>';
-        }
-    };
-    
-    xhr.onerror = function() {
-        showAlert('error', 'Network error while loading products.');
-        tableBody.innerHTML = '<tr><td colspan="8" class="error-cell">Network error</td></tr>';
-    };
-    
-    xhr.open('GET', `/products?${params.toString()}`, true);
-    xhr.send();
-}
-
-/**
- * Apply filters
- */
-function applyFilters() {
-    currentFilters = getFilters();
-    currentPage = 1;
-    loadProducts(1);
-}
-
-/**
- * Clear filters
- */
-function clearFilters() {
-    document.getElementById('filterSku').value = '';
-    document.getElementById('filterName').value = '';
-    document.getElementById('filterActive').value = '';
-    currentFilters = {};
-    currentPage = 1;
-    loadProducts(1);
-}
-
-/**
- * Get current filter values
- * @returns {Object} Filter values
- */
-function getFilters() {
-    const sku = document.getElementById('filterSku').value.trim();
-    const name = document.getElementById('filterName').value.trim();
-    const activeValue = document.getElementById('filterActive').value;
-    
-    const filters = {};
-    
-    if (sku) {
-        filters.sku = sku;
-    }
-    if (name) {
-        filters.name = name;
-    }
-    if (activeValue !== '') {
-        filters.active = activeValue === 'true';
-    }
-    
-    return filters;
-}
-
-/**
- * Render products table
- * @param {Object} data - Products data from API
- */
-function renderProductsTable(data) {
-    const tableBody = document.getElementById('productsTableBody');
-    
-    if (!data.items || data.items.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="8" class="empty-cell">No products found</td></tr>';
-        return;
-    }
-    
-    let html = '';
-    
-    data.items.forEach(product => {
-        const createdAt = new Date(product.created_at).toLocaleString();
-        const activeStatus = product.active 
-            ? '<span class="badge badge-success">Active</span>' 
-            : '<span class="badge badge-inactive">Inactive</span>';
-        const price = product.price !== null ? `$${parseFloat(product.price).toFixed(2)}` : '-';
-        const description = product.description || '-';
-        
-        html += `
-            <tr>
-                <td>${product.id}</td>
-                <td><strong>${escapeHtml(product.sku)}</strong></td>
-                <td>${escapeHtml(product.name)}</td>
-                <td class="description-cell">${escapeHtml(description)}</td>
-                <td>${price}</td>
-                <td>${activeStatus}</td>
-                <td>${createdAt}</td>
-                <td class="actions-cell">
-                    <button class="btn-small btn-edit" onclick="openEditModal(${product.id})">Edit</button>
-                    <button class="btn-small btn-delete" onclick="deleteProduct(${product.id})">Delete</button>
-                </td>
-            </tr>
-        `;
-    });
-    
-    tableBody.innerHTML = html;
-}
-
-/**
- * Update pagination controls
- * @param {Object} data - Products data from API
- */
-function updatePaginationControls(data) {
-    const total = data.total || 0;
-    const totalPages = Math.ceil(total / itemsPerPage) || 1;
-    const currentPageNum = currentPage;
-    
-    // Update info text
-    const paginationInfo = document.getElementById('paginationInfo');
-    const start = (currentPageNum - 1) * itemsPerPage + 1;
-    const end = Math.min(currentPageNum * itemsPerPage, total);
-    paginationInfo.textContent = `Page ${currentPageNum} of ${totalPages} (${total} products total, showing ${start}-${end})`;
-    
-    // Update buttons
-    const prevBtn = document.getElementById('prevPageBtn');
-    const nextBtn = document.getElementById('nextPageBtn');
-    
-    prevBtn.disabled = currentPageNum <= 1;
-    nextBtn.disabled = currentPageNum >= totalPages;
-}
-
-/**
- * Open create product modal
- */
-function openCreateModal() {
-    const modal = document.getElementById('productModal');
-    const modalTitle = document.getElementById('modalTitle');
-    const form = document.getElementById('productForm');
-    
-    modalTitle.textContent = 'Create Product';
-    form.reset();
-    document.getElementById('productId').value = '';
-    document.getElementById('productActive').checked = true;
-    
-    modal.classList.remove('hidden');
-}
-
-/**
- * Open edit product modal
- * @param {number} productId - Product ID to edit
- */
-function openEditModal(productId) {
-    // Fetch product details
-    const xhr = new XMLHttpRequest();
-    
-    xhr.onload = function() {
-        if (xhr.status === 200) {
-            try {
-                // Find product in current table data
-                const params = new URLSearchParams();
-                params.append('offset', (currentPage - 1) * itemsPerPage);
-                params.append('limit', itemsPerPage);
-                
-                // Add current filters
-                if (currentFilters.sku) params.append('sku', currentFilters.sku);
-                if (currentFilters.name) params.append('name', currentFilters.name);
-                if (currentFilters.active !== undefined && currentFilters.active !== '') {
-                    params.append('active', currentFilters.active);
-                }
-                
-                const xhr2 = new XMLHttpRequest();
-                xhr2.onload = function() {
-                    if (xhr2.status === 200) {
-                        const data = JSON.parse(xhr2.responseText);
-                        const product = data.items.find(p => p.id === productId);
-                        
-                        if (product) {
-                            const modal = document.getElementById('productModal');
-                            const modalTitle = document.getElementById('modalTitle');
-                            
-                            modalTitle.textContent = 'Edit Product';
-                            document.getElementById('productId').value = product.id;
-                            document.getElementById('productSku').value = product.sku || '';
-                            document.getElementById('productName').value = product.name || '';
-                            document.getElementById('productDescription').value = product.description || '';
-                            document.getElementById('productPrice').value = product.price || '';
-                            document.getElementById('productActive').checked = product.active;
-                            
-                            modal.classList.remove('hidden');
-                        }
-                    }
-                };
-                xhr2.open('GET', `/products?${params.toString()}`, true);
-                xhr2.send();
-                
-            } catch (error) {
-                showAlert('error', 'Failed to load product details.');
-            }
-        }
-    };
-    
-    xhr.onerror = function() {
-        showAlert('error', 'Network error while loading product.');
-    };
-    
-    // Just trigger a reload of the current page to get the product
-    const params = new URLSearchParams();
-    params.append('offset', (currentPage - 1) * itemsPerPage);
-    params.append('limit', itemsPerPage);
-    
-    if (currentFilters.sku) params.append('sku', currentFilters.sku);
-    if (currentFilters.name) params.append('name', currentFilters.name);
-    if (currentFilters.active !== undefined && currentFilters.active !== '') {
-        params.append('active', currentFilters.active);
-    }
-    
-    xhr.open('GET', `/products?${params.toString()}`, true);
-    xhr.send();
-}
-
-/**
- * Close product modal
- */
-function closeProductModal() {
-    const modal = document.getElementById('productModal');
-    modal.classList.add('hidden');
-}
-
-/**
- * Submit product form (create or update)
- * @param {Event} event - Form submit event
- */
-function submitProductForm(event) {
-    event.preventDefault();
-    
-    const productId = document.getElementById('productId').value;
-    const productData = {
-        sku: document.getElementById('productSku').value.trim(),
-        name: document.getElementById('productName').value.trim(),
-        description: document.getElementById('productDescription').value.trim() || null,
-        price: document.getElementById('productPrice').value ? parseFloat(document.getElementById('productPrice').value) : null,
-        active: document.getElementById('productActive').checked
-    };
-    
-    // Validate
-    if (!productData.sku || !productData.name) {
-        showAlert('error', 'SKU and Name are required fields.');
-        return;
-    }
-    
-    const xhr = new XMLHttpRequest();
-    const isEdit = productId !== '';
-    const url = isEdit ? `/products/${productId}` : '/products';
-    const method = isEdit ? 'PUT' : 'POST';
-    
-    xhr.onload = function() {
-        if (xhr.status === 200 || xhr.status === 201) {
-            showAlert('success', `Product ${isEdit ? 'updated' : 'created'} successfully!`);
-            closeProductModal();
-            loadProducts(currentPage);
-        } else {
-            try {
-                const errorData = JSON.parse(xhr.responseText);
-                showAlert('error', `Failed to save product: ${errorData.detail || 'Unknown error'}`);
-            } catch (error) {
-                showAlert('error', `Failed to save product: ${xhr.status}`);
-            }
-        }
-    };
-    
-    xhr.onerror = function() {
-        showAlert('error', 'Network error while saving product.');
-    };
-    
-    xhr.open(method, url, true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.send(JSON.stringify(productData));
-}
-
-/**
- * Delete a single product
- * @param {number} productId - Product ID to delete
- */
-function deleteProduct(productId) {
-    if (!confirm('Are you sure you want to delete this product?')) {
-        return;
-    }
-    
-    const xhr = new XMLHttpRequest();
-    
-    xhr.onload = function() {
-        if (xhr.status === 204) {
-            showAlert('success', 'Product deleted successfully!');
-            loadProducts(currentPage);
-        } else if (xhr.status === 404) {
-            showAlert('error', 'Product not found.');
-        } else {
-            showAlert('error', `Failed to delete product: ${xhr.status}`);
-        }
-    };
-    
-    xhr.onerror = function() {
-        showAlert('error', 'Network error while deleting product.');
-    };
-    
-    xhr.open('DELETE', `/products/${productId}`, true);
-    xhr.send();
-}
-
-/**
- * Delete all products (bulk delete)
- */
-function deleteAllProducts() {
-    const confirmMsg = 'Are you sure you want to delete ALL products? This action cannot be undone!';
-    
-    if (!confirm(confirmMsg)) {
-        return;
-    }
-    
-    // Double confirmation for safety
-    if (!confirm('This will permanently delete all products. Are you absolutely sure?')) {
-        return;
-    }
-    
-    const xhr = new XMLHttpRequest();
-    
-    xhr.onload = function() {
-        if (xhr.status === 204) {
-            showAlert('success', 'All products deleted successfully!');
-            currentPage = 1;
-            loadProducts(1);
-        } else {
-            showAlert('error', `Failed to delete products: ${xhr.status}`);
-        }
-    };
-    
-    xhr.onerror = function() {
-        showAlert('error', 'Network error while deleting products.');
-    };
-    
-    xhr.open('DELETE', '/products/all', true);
-    xhr.send();
-}
-
-/**
- * Show alert message at top of page
- * @param {string} type - Alert type: 'success', 'error', 'info'
- * @param {string} message - Alert message
- */
-function showAlert(type, message) {
-    const alertSection = document.getElementById('alertSection');
-    const alertMessage = document.getElementById('alertMessage');
-    
-    if (!alertSection || !alertMessage) {
-        return;
-    }
-    
-    alertMessage.className = `alert-message alert-${type}`;
-    alertMessage.textContent = message;
-    alertSection.classList.remove('hidden');
-    
-    // Auto-hide after 5 seconds
+  function toast(message, type = 'success', ms = 3800) {
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.innerHTML = `<span class="t-dot"></span><div>${escapeHtml(message)}</div>`;
+    $('#toasts').appendChild(el);
     setTimeout(() => {
-        alertSection.classList.add('hidden');
-    }, 5000);
-}
+      el.classList.add('leaving');
+      el.addEventListener('animationend', () => el.remove(), { once: true });
+    }, ms);
+  }
 
-/**
- * Escape HTML to prevent XSS
- * @param {string} text - Text to escape
- * @returns {string} Escaped text
- */
-function escapeHtml(text) {
-    if (text === null || text === undefined) {
-        return '';
-    }
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// =============================================================================
-// WEBHOOKS PAGE FUNCTIONALITY
-// =============================================================================
-
-/**
- * Initialize webhooks page
- */
-function initializeWebhooksPage() {
-    // DOM elements
-    const createWebhookBtn = document.getElementById('createWebhookBtn');
-    const closeWebhookModalBtn = document.getElementById('closeWebhookModalBtn');
-    const cancelWebhookModalBtn = document.getElementById('cancelWebhookModalBtn');
-    const webhookForm = document.getElementById('webhookForm');
-    const webhookModal = document.getElementById('webhookModal');
-    const closeTestResultBtn = document.getElementById('closeTestResultBtn');
-
-    // Event listeners
-    if (createWebhookBtn) {
-        createWebhookBtn.addEventListener('click', openCreateWebhookModal);
-    }
-    
-    if (closeWebhookModalBtn) {
-        closeWebhookModalBtn.addEventListener('click', closeWebhookModal);
-    }
-    
-    if (cancelWebhookModalBtn) {
-        cancelWebhookModalBtn.addEventListener('click', closeWebhookModal);
-    }
-    
-    if (webhookForm) {
-        webhookForm.addEventListener('submit', submitWebhookForm);
-    }
-    
-    if (closeTestResultBtn) {
-        closeTestResultBtn.addEventListener('click', () => {
-            document.getElementById('testResultSection').classList.add('hidden');
-        });
-    }
-    
-    // Close modal when clicking outside
-    if (webhookModal) {
-        webhookModal.addEventListener('click', (e) => {
-            if (e.target === webhookModal) {
-                closeWebhookModal();
-            }
-        });
-    }
-    
-    // Load webhooks on page load
-    loadWebhooks();
-}
-
-/**
- * Load webhooks from the backend
- */
-function loadWebhooks() {
-    const tableBody = document.getElementById('webhooksTableBody');
-    tableBody.innerHTML = '<tr><td colspan="5" class="loading-cell">Loading webhooks...</td></tr>';
-    
-    const xhr = new XMLHttpRequest();
-    
-    xhr.onload = function() {
-        if (xhr.status === 200) {
-            try {
-                const data = JSON.parse(xhr.responseText);
-                renderWebhooksTable(data);
-            } catch (error) {
-                showWebhookAlert('error', 'Failed to parse webhooks data.');
-                tableBody.innerHTML = '<tr><td colspan="5" class="error-cell">Failed to parse data</td></tr>';
-            }
-        } else {
-            showWebhookAlert('error', `Failed to load webhooks: ${xhr.status}`);
-            tableBody.innerHTML = '<tr><td colspan="5" class="error-cell">Failed to load webhooks</td></tr>';
-        }
-    };
-    
-    xhr.onerror = function() {
-        showWebhookAlert('error', 'Network error while loading webhooks.');
-        tableBody.innerHTML = '<tr><td colspan="5" class="error-cell">Network error</td></tr>';
-    };
-    
-    xhr.open('GET', '/webhooks', true);
-    xhr.send();
-}
-
-/**
- * Render webhooks table
- * @param {Array} data - Webhooks array from API
- */
-function renderWebhooksTable(data) {
-    const tableBody = document.getElementById('webhooksTableBody');
-    
-    if (!data || data.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="5" class="empty-cell">No webhooks configured</td></tr>';
-        return;
-    }
-    
-    let html = '';
-    
-    data.forEach(webhook => {
-        const createdAt = webhook.created_at ? new Date(webhook.created_at).toLocaleString() : 'N/A';
-        
-        html += `
-            <tr>
-                <td>${webhook.id}</td>
-                <td><span class="event-badge">${escapeHtml(webhook.event)}</span></td>
-                <td class="url-cell"><a href="${escapeHtml(webhook.url)}" target="_blank" rel="noopener">${escapeHtml(webhook.url)}</a></td>
-                <td>${createdAt}</td>
-                <td class="actions-cell">
-                    <button class="btn-small btn-test" onclick="testWebhook('${escapeHtml(webhook.event)}', ${webhook.id})">Test</button>
-                    <button class="btn-small btn-edit" onclick="openEditWebhookModal(${webhook.id})">Edit</button>
-                    <button class="btn-small btn-delete" onclick="deleteWebhook(${webhook.id})">Delete</button>
-                </td>
-            </tr>
-        `;
+  function setupDialogs() {
+    $$('dialog.modal').forEach((dialog) => {
+      dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); }); // backdrop click
+      $$('[data-close]', dialog).forEach((btn) => btn.addEventListener('click', () => dialog.close()));
     });
-    
-    tableBody.innerHTML = html;
-}
+  }
 
-/**
- * Open create webhook modal
- */
-function openCreateWebhookModal() {
-    const modal = document.getElementById('webhookModal');
-    const modalTitle = document.getElementById('webhookModalTitle');
-    const form = document.getElementById('webhookForm');
-    
-    modalTitle.textContent = 'Create Webhook';
-    form.reset();
-    document.getElementById('webhookId').value = '';
-    
-    modal.classList.remove('hidden');
-}
+  /** Native <dialog> confirmation; resolves true only if the user confirms. */
+  function confirmAction({ title, text, confirmLabel = 'Delete' }) {
+    const dialog = $('#confirmModal');
+    $('#confirmTitle').textContent = title;
+    $('#confirmText').textContent = text;
+    $('#confirmBtn').textContent = confirmLabel;
+    $('#confirmBtn').onclick = () => dialog.close('confirm');
+    dialog.returnValue = '';
+    dialog.showModal();
+    return new Promise((resolve) => {
+      dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true });
+    });
+  }
 
-/**
- * Open edit webhook modal
- * @param {number} webhookId - Webhook ID to edit
- */
-function openEditWebhookModal(webhookId) {
-    // Fetch current webhooks list to find the webhook
-    const xhr = new XMLHttpRequest();
-    
-    xhr.onload = function() {
-        if (xhr.status === 200) {
-            try {
-                const data = JSON.parse(xhr.responseText);
-                const webhook = data.find(w => w.id === webhookId);
-                
-                if (webhook) {
-                    const modal = document.getElementById('webhookModal');
-                    const modalTitle = document.getElementById('webhookModalTitle');
-                    
-                    modalTitle.textContent = 'Edit Webhook';
-                    document.getElementById('webhookId').value = webhook.id;
-                    document.getElementById('webhookEvent').value = webhook.event || '';
-                    document.getElementById('webhookUrl').value = webhook.url || '';
-                    
-                    modal.classList.remove('hidden');
-                } else {
-                    showWebhookAlert('error', 'Webhook not found.');
-                }
-            } catch (error) {
-                showWebhookAlert('error', 'Failed to load webhook details.');
-            }
-        }
-    };
-    
-    xhr.onerror = function() {
-        showWebhookAlert('error', 'Network error while loading webhook.');
-    };
-    
-    xhr.open('GET', '/webhooks', true);
-    xhr.send();
-}
+  async function withBusy(button, label, fn) {
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = `<span class="spinner"></span>${escapeHtml(label)}`;
+    try { return await fn(); } finally { button.disabled = false; button.innerHTML = original; }
+  }
 
-/**
- * Close webhook modal
- */
-function closeWebhookModal() {
-    const modal = document.getElementById('webhookModal');
-    modal.classList.add('hidden');
-}
+  // --- API -------------------------------------------------------------------
 
-/**
- * Submit webhook form (create or update)
- * @param {Event} event - Form submit event
- */
-function submitWebhookForm(event) {
-    event.preventDefault();
-    
-    const webhookId = document.getElementById('webhookId').value;
-    const webhookData = {
-        event: document.getElementById('webhookEvent').value.trim(),
-        url: document.getElementById('webhookUrl').value.trim()
-    };
-    
-    // Validate
-    if (!webhookData.event || !webhookData.url) {
-        showWebhookAlert('error', 'Event Type and URL are required fields.');
-        return;
-    }
-    
-    // Validate URL format
+  async function errorMessage(res) {
     try {
-        new URL(webhookData.url);
-    } catch (e) {
-        showWebhookAlert('error', 'Please enter a valid URL.');
-        return;
-    }
-    
-    const xhr = new XMLHttpRequest();
-    const isEdit = webhookId !== '';
-    
-    // Note: Backend doesn't support PUT/PATCH, so we delete and recreate for edit
-    if (isEdit) {
-        // Delete old webhook first
-        deleteWebhookAndRecreate(parseInt(webhookId), webhookData);
-        return;
-    }
-    
-    // Create new webhook
-    xhr.onload = function() {
-        if (xhr.status === 201) {
-            showWebhookAlert('success', 'Webhook created successfully!');
-            closeWebhookModal();
-            loadWebhooks();
-        } else {
-            try {
-                const errorData = JSON.parse(xhr.responseText);
-                showWebhookAlert('error', `Failed to save webhook: ${errorData.detail || 'Unknown error'}`);
-            } catch (error) {
-                showWebhookAlert('error', `Failed to save webhook: ${xhr.status}`);
-            }
-        }
-    };
-    
-    xhr.onerror = function() {
-        showWebhookAlert('error', 'Network error while saving webhook.');
-    };
-    
-    xhr.open('POST', '/webhooks', true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.send(JSON.stringify(webhookData));
-}
+      const { detail } = await res.json();
+      if (typeof detail === 'string') return detail;
+      if (Array.isArray(detail)) return detail.map((d) => `${d.loc?.slice(-1)[0] ?? 'field'}: ${d.msg}`).join('; ');
+    } catch { /* not JSON */ }
+    return `Request failed (${res.status})`;
+  }
 
-/**
- * Helper function to delete and recreate webhook (simulates update)
- * @param {number} webhookId - Webhook ID to delete
- * @param {Object} webhookData - New webhook data
- */
-function deleteWebhookAndRecreate(webhookId, webhookData) {
-    const xhr = new XMLHttpRequest();
-    
-    xhr.onload = function() {
-        if (xhr.status === 204) {
-            // Now create the new webhook
-            const xhr2 = new XMLHttpRequest();
-            
-            xhr2.onload = function() {
-                if (xhr2.status === 201) {
-                    showWebhookAlert('success', 'Webhook updated successfully!');
-                    closeWebhookModal();
-                    loadWebhooks();
-                } else {
-                    showWebhookAlert('error', 'Webhook deleted but failed to recreate. Please create it manually.');
-                    loadWebhooks();
-                }
-            };
-            
-            xhr2.onerror = function() {
-                showWebhookAlert('error', 'Webhook deleted but network error on recreate.');
-                loadWebhooks();
-            };
-            
-            xhr2.open('POST', '/webhooks', true);
-            xhr2.setRequestHeader('Content-Type', 'application/json');
-            xhr2.send(JSON.stringify(webhookData));
-        } else {
-            showWebhookAlert('error', 'Failed to update webhook.');
-        }
-    };
-    
-    xhr.onerror = function() {
-        showWebhookAlert('error', 'Network error while updating webhook.');
-    };
-    
-    xhr.open('DELETE', `/webhooks/${webhookId}`, true);
-    xhr.send();
-}
-
-/**
- * Delete a webhook
- * @param {number} webhookId - Webhook ID to delete
- */
-function deleteWebhook(webhookId) {
-    if (!confirm('Are you sure you want to delete this webhook?')) {
-        return;
+  /** fetch + JSON + readable errors. Free Render instances sleep when idle, so
+      a request that takes over 4s shows a "waking up" note instead of looking frozen. */
+  async function api(path, { method = 'GET', body } = {}) {
+    const options = { method, headers: {} };
+    if (body !== undefined) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body);
     }
-    
-    const xhr = new XMLHttpRequest();
-    
-    xhr.onload = function() {
-        if (xhr.status === 204) {
-            showWebhookAlert('success', 'Webhook deleted successfully!');
-            loadWebhooks();
-        } else if (xhr.status === 404) {
-            showWebhookAlert('error', 'Webhook not found.');
-        } else {
-            showWebhookAlert('error', `Failed to delete webhook: ${xhr.status}`);
-        }
-    };
-    
-    xhr.onerror = function() {
-        showWebhookAlert('error', 'Network error while deleting webhook.');
-    };
-    
-    xhr.open('DELETE', `/webhooks/${webhookId}`, true);
-    xhr.send();
-}
+    const wakeNote = setTimeout(() => toast('Waking up the server… free instances sleep when idle (up to a minute).', 'info', 6000), 4000);
+    try {
+      const res = await fetch(path, options);
+      if (!res.ok) throw new Error(await errorMessage(res));
+      return res.status === 204 ? null : res.json();
+    } finally {
+      clearTimeout(wakeNote);
+    }
+  }
 
-/**
- * Test a webhook by triggering its event
- * @param {string} eventType - Event type to trigger
- * @param {number} webhookId - Webhook ID (for display purposes)
- */
-function testWebhook(eventType, webhookId) {
-    showWebhookAlert('info', `Testing webhook for event: ${eventType}...`);
-    
-    const startTime = Date.now();
-    const xhr = new XMLHttpRequest();
-    
-    xhr.onload = function() {
-        const endTime = Date.now();
-        const responseTime = endTime - startTime;
-        
-        if (xhr.status === 202) {
-            try {
-                const response = JSON.parse(xhr.responseText);
-                showTestResult('success', {
-                    webhookId: webhookId,
-                    eventType: eventType,
-                    statusCode: xhr.status,
-                    responseTime: responseTime,
-                    message: 'Test event dispatched successfully! Webhook will receive the request asynchronously.',
-                    response: response
-                });
-                showWebhookAlert('success', 'Test webhook dispatched successfully!');
-            } catch (error) {
-                showTestResult('error', {
-                    webhookId: webhookId,
-                    eventType: eventType,
-                    statusCode: xhr.status,
-                    responseTime: responseTime,
-                    message: 'Test dispatched but failed to parse response.',
-                    error: xhr.responseText
-                });
-            }
-        } else {
-            showTestResult('error', {
-                webhookId: webhookId,
-                eventType: eventType,
-                statusCode: xhr.status,
-                responseTime: responseTime,
-                message: `Test failed with status: ${xhr.status}`,
-                error: xhr.responseText
-            });
-            showWebhookAlert('error', `Test failed: ${xhr.status}`);
+  // ===========================================================================
+  // Upload page
+  // ===========================================================================
+
+  function initUpload() {
+    const input = $('#csvFile');
+    const zone = $('#dropzone');
+    const uploadBtn = $('#uploadBtn');
+    const ringBar = $('#ringBar');
+    const CIRCUMFERENCE = 2 * Math.PI * 52;
+    ringBar.style.strokeDasharray = CIRCUMFERENCE;
+    let file = null;
+
+    function setFile(f) {
+      if (f && !/\.csv$/i.test(f.name)) { toast('Please choose a .csv file.', 'error'); return; }
+      file = f || null;
+      $('#fileChip').hidden = !file;
+      uploadBtn.disabled = !file;
+      if (file) {
+        $('#fileName').textContent = file.name;
+        $('#fileSize').textContent = formatBytes(file.size);
+      } else {
+        input.value = '';
+      }
+    }
+
+    input.addEventListener('change', () => setFile(input.files[0]));
+    ['dragenter', 'dragover'].forEach((type) => zone.addEventListener(type, (e) => { e.preventDefault(); zone.classList.add('is-dragging'); }));
+    ['dragleave', 'drop'].forEach((type) => zone.addEventListener(type, (e) => { e.preventDefault(); zone.classList.remove('is-dragging'); }));
+    zone.addEventListener('drop', (e) => setFile(e.dataTransfer.files[0]));
+    $('#clearFileBtn').addEventListener('click', () => setFile(null));
+    uploadBtn.addEventListener('click', () => file && startImport(file));
+
+    function setRing(pct, state = '') {
+      const clamped = Math.max(0, Math.min(100, pct));
+      ringBar.style.strokeDashoffset = CIRCUMFERENCE * (1 - clamped / 100);
+      $('#pct').textContent = Math.floor(clamped);
+      $('#ring').className = `ring ${state}`;
+    }
+
+    function setPill(text, classes) {
+      const pill = $('#statusPill');
+      pill.textContent = text;
+      pill.className = `pill ${classes}`;
+    }
+
+    function startImport(f) {
+      $('#pickStage').hidden = true;
+      $('#progressStage').hidden = false;
+      $('#resultBanner').hidden = true;
+      $('#pFileName').textContent = f.name;
+      $('#pFileSize').textContent = formatBytes(f.size);
+      ['#statOk', '#statFailed'].forEach((id) => { $(id).dataset.value = 0; $(id).textContent = '0'; });
+      $('#statFailed').classList.remove('danger');
+      ['#statTotal', '#statRate', '#statEta'].forEach((id) => { $(id).textContent = '–'; });
+      setRing(0);
+      setPill('Uploading', 'pill-accent pill-live');
+      $('#ringSub').textContent = 'uploaded';
+
+      const startedAt = performance.now();
+      let processingStartedAt = null;
+      let lastPct = 0;
+      const elapsedTimer = setInterval(() => {
+        $('#statElapsed').textContent = formatDuration((performance.now() - startedAt) / 1000);
+      }, 1000);
+      // No upload progress after 5s usually means the free server is still waking up.
+      const wakeHint = setTimeout(() => { $('#wakeHint').hidden = false; }, 5000);
+
+      // XHR rather than fetch: it reports upload progress for big files.
+      const xhr = new XMLHttpRequest();
+      xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
+        clearTimeout(wakeHint);
+        $('#wakeHint').hidden = true;
+        setRing((e.loaded / e.total) * 100);
+      };
+      xhr.onload = () => {
+        clearTimeout(wakeHint);
+        $('#wakeHint').hidden = true;
+        if (xhr.status !== 202) {
+          let message = `Upload failed (${xhr.status}).`;
+          try { message = JSON.parse(xhr.responseText).detail || message; } catch { /* keep default */ }
+          finish('failed', { message });
+          return;
         }
-    };
-    
-    xhr.onerror = function() {
-        const endTime = Date.now();
-        const responseTime = endTime - startTime;
-        
-        showTestResult('error', {
-            webhookId: webhookId,
-            eventType: eventType,
-            statusCode: 0,
-            responseTime: responseTime,
-            message: 'Network error occurred while testing webhook.',
-            error: 'Network request failed'
+        poll(JSON.parse(xhr.responseText).task_id);
+      };
+      xhr.onerror = () => finish('failed', { message: 'Network error while uploading. Check your connection and try again.' });
+      const form = new FormData();
+      form.append('file', f);
+      xhr.open('POST', '/upload/start');
+      xhr.send(form);
+
+      async function poll(taskId) {
+        setRing(0);
+        setPill('Queued', 'pill-muted pill-live');
+        $('#ringSub').textContent = 'queued';
+
+        for (;;) {
+          let data;
+          try {
+            data = await api(`/upload/status/${taskId}`);
+          } catch {
+            await sleep(2000); // transient network/server hiccup: keep polling
+            continue;
+          }
+          const state = data.status.status;
+          const p = data.progress || {};
+          const total = Number(p.total_rows || 0);
+          const done = Number(p.processed_rows || 0);
+          const ok = Number(p.successful_rows || 0);
+          const failed = Number(p.failed_rows || 0);
+
+          if (state === 'PROCESSING' || done > 0) {
+            processingStartedAt ??= performance.now();
+            setPill('Importing', 'pill-accent pill-live');
+            $('#ringSub').textContent = 'processed';
+          }
+          tweenNumber($('#statOk'), ok);
+          tweenNumber($('#statFailed'), failed);
+          $('#statFailed').classList.toggle('danger', failed > 0);
+          if (total) $('#statTotal').textContent = nf.format(total);
+
+          const secs = processingStartedAt ? (performance.now() - processingStartedAt) / 1000 : 0;
+          const rate = secs > 0.5 ? done / secs : 0;
+          if (rate > 0) $('#statRate').textContent = nf.format(Math.round(rate));
+          $('#statEta').textContent = rate > 0 && total ? formatDuration((total - done) / rate) : '–';
+
+          lastPct = total ? (done / total) * 100 : 0;
+          setRing(lastPct);
+
+          if (state === 'COMPLETED') return finish('done', { ok, failed });
+          if (state === 'FAILED') return finish('failed', { message: data.status.error || 'The import failed.' });
+          await sleep(1000);
+        }
+      }
+
+      function finish(result, { ok = 0, failed = 0, message = '' }) {
+        clearInterval(elapsedTimer);
+        clearTimeout(wakeHint);
+        $('#statEta').textContent = '–';
+        const banner = $('#resultBanner');
+        banner.hidden = false;
+
+        if (result === 'done') {
+          setRing(100, 'done');
+          setPill('Completed', 'pill-success');
+          $('#ringSub').textContent = 'complete';
+          banner.className = 'result-banner success';
+          $('#resultText').textContent = `Imported ${nf.format(ok)} rows${failed ? ` · ${nf.format(failed)} skipped as invalid` : ''}.`;
+          $('#resultActions').innerHTML = '<a class="btn btn-primary btn-sm" href="/products.html">View products</a><button type="button" class="btn btn-secondary btn-sm" data-again>Import another</button>';
+          toast('Import complete');
+        } else {
+          setRing(lastPct, 'failed');
+          setPill('Failed', 'pill-danger');
+          $('#ringSub').textContent = 'stopped';
+          banner.className = 'result-banner failed';
+          $('#resultText').textContent = message;
+          $('#resultActions').innerHTML = '<button type="button" class="btn btn-secondary btn-sm" data-again>Try again</button>';
+        }
+        $('[data-again]', banner).addEventListener('click', () => {
+          $('#progressStage').hidden = true;
+          $('#pickStage').hidden = false;
+          setFile(null);
         });
-        showWebhookAlert('error', 'Network error while testing webhook.');
-    };
-    
-    xhr.open('POST', `/webhooks/test/${encodeURIComponent(eventType)}`, true);
-    xhr.send();
-}
-
-/**
- * Show test result in a dedicated section
- * @param {string} type - Result type: 'success' or 'error'
- * @param {Object} result - Test result data
- */
-function showTestResult(type, result) {
-    const testResultSection = document.getElementById('testResultSection');
-    const testResultContent = document.getElementById('testResultContent');
-    
-    let html = `
-        <div class="test-result-item">
-            <strong>Event Type:</strong> ${escapeHtml(result.eventType)}
-        </div>
-        <div class="test-result-item">
-            <strong>Status Code:</strong> <span class="status-code status-${type}">${result.statusCode}</span>
-        </div>
-        <div class="test-result-item">
-            <strong>Response Time:</strong> ${result.responseTime}ms
-        </div>
-        <div class="test-result-item">
-            <strong>Message:</strong> ${escapeHtml(result.message)}
-        </div>
-    `;
-    
-    if (result.response) {
-        html += `
-            <div class="test-result-item">
-                <strong>Response:</strong>
-                <pre>${escapeHtml(JSON.stringify(result.response, null, 2))}</pre>
-            </div>
-        `;
+      }
     }
-    
-    if (result.error) {
-        html += `
-            <div class="test-result-item test-result-error">
-                <strong>Error:</strong>
-                <pre>${escapeHtml(result.error)}</pre>
-            </div>
-        `;
-    }
-    
-    testResultContent.innerHTML = html;
-    testResultSection.classList.remove('hidden');
-    testResultSection.className = `test-result-section test-result-${type}`;
-}
+  }
 
-/**
- * Show alert message for webhooks page
- * @param {string} type - Alert type: 'success', 'error', 'info'
- * @param {string} message - Alert message
- */
-function showWebhookAlert(type, message) {
-    const alertSection = document.getElementById('webhookAlertSection');
-    const alertMessage = document.getElementById('webhookAlertMessage');
-    
-    if (!alertSection || !alertMessage) {
+  // ===========================================================================
+  // Products page
+  // ===========================================================================
+
+  function initProducts() {
+    const PAGE_SIZE = 20;
+    const state = { page: 1, name: '', sku: '', active: '', total: 0 };
+    const rows = $('#productRows');
+    const modal = $('#productModal');
+    let items = [];
+    let editingId = null;
+    let requestSeq = 0;
+
+    const hasFilters = () => Boolean(state.name || state.sku || state.active);
+
+    function query({ paged = true } = {}) {
+      const params = new URLSearchParams();
+      if (paged) { params.set('limit', PAGE_SIZE); params.set('offset', (state.page - 1) * PAGE_SIZE); }
+      if (state.name) params.set('name', state.name);
+      if (state.sku) params.set('sku', state.sku);
+      if (state.active) params.set('active', state.active);
+      return params;
+    }
+
+    function showSkeleton() {
+      rows.innerHTML = Array.from({ length: 8 }, (_, i) => `
+        <tr>
+          <td><span class="skeleton" style="width: 92px"></span></td>
+          <td><span class="skeleton" style="width: ${140 + ((i * 37) % 120)}px"></span>
+              <span class="skeleton" style="width: ${90 + ((i * 53) % 140)}px; height: 9px; margin-top: 8px"></span></td>
+          <td class="num"><span class="skeleton" style="width: 52px; margin-left: auto"></span></td>
+          <td><span class="skeleton" style="width: 62px"></span></td>
+          <td><span class="skeleton" style="width: 56px"></span></td>
+          <td></td>
+        </tr>`).join('');
+    }
+
+    async function load() {
+      const seq = ++requestSeq; // typing fires several requests; only the latest may render
+      if (items.length) rows.style.opacity = '0.55'; else showSkeleton();
+      try {
+        const data = await api(`/products?${query()}`);
+        if (seq !== requestSeq) return;
+        if (!data.items.length && state.page > 1) { state.page -= 1; load(); return; }
+        state.total = data.total;
+        items = data.items;
+        render(data);
+      } catch (err) {
+        if (seq !== requestSeq) return;
+        items = [];
+        rows.innerHTML = '';
+        showEmpty('error', err.message);
+      } finally {
+        if (seq === requestSeq) rows.style.opacity = '';
+      }
+    }
+
+    function render({ total }) {
+      $('#totalBadge').textContent = hasFilters() ? `${nf.format(total)} matching` : nf.format(total);
+      $('#bulkDeleteLabel').textContent = hasFilters() ? `Delete ${nf.format(total)} matching` : 'Delete all';
+      $('#bulkDeleteBtn').disabled = total === 0;
+
+      if (!items.length) {
+        rows.innerHTML = '';
+        showEmpty(hasFilters() ? 'nomatch' : 'none');
         return;
-    }
-    
-    alertMessage.className = `alert-message alert-${type}`;
-    alertMessage.textContent = message;
-    alertSection.classList.remove('hidden');
-    
-    // Auto-hide after 5 seconds
-    setTimeout(() => {
-        alertSection.classList.add('hidden');
-    }, 5000);
-}
+      }
+      $('#productsEmpty').hidden = true;
+      rows.innerHTML = items.map((p) => `
+        <tr>
+          <td class="cell-sku">${escapeHtml(p.sku)}</td>
+          <td>
+            <div class="cell-name">${escapeHtml(p.name)}</div>
+            ${p.description ? `<div class="cell-desc" title="${escapeHtml(p.description)}">${escapeHtml(p.description)}</div>` : ''}
+          </td>
+          <td class="num">${p.price == null ? '<span class="cell-muted">—</span>' : price.format(p.price)}</td>
+          <td>${p.active ? '<span class="pill pill-success">Active</span>' : '<span class="pill pill-muted">Inactive</span>'}</td>
+          <td class="cell-muted" title="${escapeHtml(new Date(p.updated_at).toLocaleString())}">${timeAgo(p.updated_at)}</td>
+          <td class="actions">
+            <div class="row-actions">
+              <button type="button" class="icon-btn" data-edit="${p.id}" aria-label="Edit ${escapeHtml(p.sku)}">${ICON.edit}</button>
+              <button type="button" class="icon-btn danger" data-delete="${p.id}" aria-label="Delete ${escapeHtml(p.sku)}">${ICON.trash}</button>
+            </div>
+          </td>
+        </tr>`).join('');
 
+      const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      const from = (state.page - 1) * PAGE_SIZE + 1;
+      $('#pagination').hidden = false;
+      $('#pageSummary').innerHTML = `Showing <span class="mono">${nf.format(from)}–${nf.format(from + items.length - 1)}</span> of <span class="mono">${nf.format(total)}</span>`;
+      $('#pageLabel').textContent = `${nf.format(state.page)} / ${nf.format(pages)}`;
+      $('#prevPage').disabled = state.page <= 1;
+      $('#nextPage').disabled = state.page >= pages;
+    }
+
+    function showEmpty(kind, message = '') {
+      const views = {
+        none: [ICON.box, 'No products yet', 'Import a CSV to fill your catalog, or add a product by hand.', '<a class="btn btn-primary" href="/">Import a CSV</a>'],
+        nomatch: [ICON.search, 'No matching products', 'Try a different name or SKU, or clear the filters.', '<button type="button" class="btn btn-secondary" data-clear>Clear filters</button>'],
+        error: [ICON.alert, "Couldn't load products", message, '<button type="button" class="btn btn-secondary" data-retry>Try again</button>'],
+      };
+      const [icon, title, text, action] = views[kind];
+      const box = $('#productsEmpty');
+      box.hidden = false;
+      $('#pagination').hidden = true;
+      box.innerHTML = `<div class="empty"><div class="empty-icon">${icon}</div><h3>${title}</h3><p>${escapeHtml(text)}</p>${action}</div>`;
+      $('[data-clear]', box)?.addEventListener('click', clearFilters);
+      $('[data-retry]', box)?.addEventListener('click', load);
+    }
+
+    // Filters: live search with a 300 ms debounce, so typing doesn't fire a request per key.
+    const applyTextFilters = debounce(() => {
+      state.name = $('#filterName').value.trim();
+      state.sku = $('#filterSku').value.trim();
+      state.page = 1;
+      load();
+    }, 300);
+    $('#filterName').addEventListener('input', applyTextFilters);
+    $('#filterSku').addEventListener('input', applyTextFilters);
+
+    const statusButtons = $$('.segmented button');
+    statusButtons.forEach((btn) => btn.addEventListener('click', () => {
+      statusButtons.forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      state.active = btn.dataset.active;
+      state.page = 1;
+      load();
+    }));
+
+    function clearFilters() {
+      $('#filterName').value = '';
+      $('#filterSku').value = '';
+      statusButtons.forEach((b, i) => b.setAttribute('aria-pressed', String(i === 0)));
+      Object.assign(state, { name: '', sku: '', active: '', page: 1 });
+      load();
+    }
+
+    $('#prevPage').addEventListener('click', () => { state.page -= 1; load(); });
+    $('#nextPage').addEventListener('click', () => { state.page += 1; load(); });
+
+    // Row actions (one delegated listener for the whole table)
+    rows.addEventListener('click', async (e) => {
+      const editBtn = e.target.closest('[data-edit]');
+      const deleteBtn = e.target.closest('[data-delete]');
+      if (editBtn) openModal(items.find((p) => String(p.id) === editBtn.dataset.edit));
+      if (!deleteBtn) return;
+      const product = items.find((p) => String(p.id) === deleteBtn.dataset.delete);
+      const confirmed = await confirmAction({
+        title: 'Delete this product?',
+        text: `${product.sku} · ${product.name} will be permanently removed.`,
+      });
+      if (!confirmed) return;
+      try {
+        await api(`/products/${product.id}`, { method: 'DELETE' });
+        toast(`Deleted ${product.sku}`);
+        load();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+
+    // Create / edit
+    function openModal(product = null) {
+      editingId = product ? product.id : null;
+      $('#productModalTitle').textContent = product ? 'Edit product' : 'New product';
+      $('#productSubmit').textContent = product ? 'Save changes' : 'Create product';
+      $('#productSku').value = product?.sku ?? '';
+      $('#productName').value = product?.name ?? '';
+      $('#productDescription').value = product?.description ?? '';
+      $('#productPrice').value = product?.price ?? '';
+      $('#productActive').checked = product ? product.active : true;
+      $('#productFormError').hidden = true;
+      modal.showModal();
+      $(product ? '#productName' : '#productSku').focus();
+    }
+    $('#newProductBtn').addEventListener('click', () => openModal());
+
+    $('#productForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorBox = $('#productFormError');
+      const body = {
+        sku: $('#productSku').value.trim(),
+        name: $('#productName').value.trim(),
+        description: $('#productDescription').value.trim() || null,
+        price: $('#productPrice').value === '' ? null : Number($('#productPrice').value),
+        active: $('#productActive').checked,
+      };
+      if (!body.sku || !body.name) {
+        errorBox.textContent = 'SKU and name are required.';
+        errorBox.hidden = false;
+        return;
+      }
+      await withBusy($('#productSubmit'), 'Saving…', async () => {
+        try {
+          await api(editingId ? `/products/${editingId}` : '/products', { method: editingId ? 'PUT' : 'POST', body });
+          modal.close();
+          toast(editingId ? `Saved ${body.sku}` : `Created ${body.sku}`);
+          load();
+        } catch (err) {
+          errorBox.textContent = err.message; // e.g. the API's 409 "SKU already exists"
+          errorBox.hidden = false;
+        }
+      });
+    });
+
+    // Bulk delete: deletes exactly what the current filters match
+    $('#bulkDeleteBtn').addEventListener('click', async () => {
+      const count = nf.format(state.total);
+      const confirmed = await confirmAction({
+        title: hasFilters() ? `Delete ${count} matching products?` : `Delete all ${count} products?`,
+        text: hasFilters()
+          ? 'Every product matching the current filters will be permanently removed. This cannot be undone.'
+          : 'Your whole catalog will be permanently removed. This cannot be undone.',
+        confirmLabel: `Delete ${count}`,
+      });
+      if (!confirmed) return;
+      try {
+        await withBusy($('#bulkDeleteBtn'), 'Deleting…', () => api(`/products/all?${query({ paged: false })}`, { method: 'DELETE' }));
+        toast(`Deleted ${count} products`);
+        state.page = 1;
+        load();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+
+    load();
+  }
+
+  // ===========================================================================
+  // Webhooks page
+  // ===========================================================================
+
+  function initWebhooks() {
+    const rows = $('#webhookRows');
+    const modal = $('#webhookModal');
+    let hooks = [];
+    let editing = null;
+
+    async function load() {
+      if (!hooks.length) {
+        rows.innerHTML = Array.from({ length: 3 }, () => `
+          <tr><td><span class="skeleton" style="width: 120px"></span></td><td><span class="skeleton" style="width: 260px"></span></td>
+          <td><span class="skeleton" style="width: 60px"></span></td><td></td></tr>`).join('');
+      }
+      try {
+        hooks = await api('/webhooks');
+        render();
+      } catch (err) {
+        rows.innerHTML = '';
+        showEmpty(ICON.alert, "Couldn't load webhooks", err.message, '<button type="button" class="btn btn-secondary" data-retry>Try again</button>');
+      }
+    }
+
+    function render() {
+      $('#webhookBadge').textContent = nf.format(hooks.length);
+      if (!hooks.length) {
+        rows.innerHTML = '';
+        showEmpty(ICON.link, 'No webhooks yet', 'Add an endpoint to get a POST whenever an import completes.', '<button type="button" class="btn btn-primary" data-new>New webhook</button>');
+        return;
+      }
+      $('#webhooksEmpty').hidden = true;
+      rows.innerHTML = hooks.map((h) => `
+        <tr>
+          <td><span class="tag">${escapeHtml(h.event)}</span></td>
+          <td class="cell-url" title="${escapeHtml(h.url)}">${escapeHtml(h.url)}</td>
+          <td class="cell-muted">${h.created_at ? timeAgo(h.created_at) : '—'}</td>
+          <td class="actions">
+            <div class="row-actions">
+              <button type="button" class="btn btn-secondary btn-sm" data-test="${h.id}">${ICON.send} Test</button>
+              <button type="button" class="icon-btn" data-edit="${h.id}" aria-label="Edit webhook">${ICON.edit}</button>
+              <button type="button" class="icon-btn danger" data-delete="${h.id}" aria-label="Delete webhook">${ICON.trash}</button>
+            </div>
+          </td>
+        </tr>`).join('');
+    }
+
+    function showEmpty(icon, title, text, action) {
+      const box = $('#webhooksEmpty');
+      box.hidden = false;
+      box.innerHTML = `<div class="empty"><div class="empty-icon">${icon}</div><h3>${title}</h3><p>${escapeHtml(text)}</p>${action}</div>`;
+      $('[data-new]', box)?.addEventListener('click', () => openModal());
+      $('[data-retry]', box)?.addEventListener('click', load);
+    }
+
+    rows.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-test], [data-edit], [data-delete]');
+      if (!btn) return;
+      const hook = hooks.find((h) => String(h.id) === (btn.dataset.test || btn.dataset.edit || btn.dataset.delete));
+
+      if (btn.dataset.test) {
+        await withBusy(btn, 'Sending', async () => {
+          try {
+            await api(`/webhooks/test/${encodeURIComponent(hook.event)}`, { method: 'POST' });
+            toast(`Test "${hook.event}" event queued for delivery to every subscribed URL.`, 'success', 5000);
+          } catch (err) {
+            toast(err.message, 'error');
+          }
+        });
+      } else if (btn.dataset.edit) {
+        openModal(hook);
+      } else {
+        const confirmed = await confirmAction({ title: 'Delete this webhook?', text: `${hook.url} will stop receiving "${hook.event}" events.` });
+        if (!confirmed) return;
+        try {
+          await api(`/webhooks/${hook.id}`, { method: 'DELETE' });
+          toast('Webhook deleted');
+          load();
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      }
+    });
+
+    function openModal(hook = null) {
+      editing = hook;
+      $('#webhookModalTitle').textContent = hook ? 'Edit webhook' : 'New webhook';
+      $('#webhookEvent').value = hook?.event ?? 'import.completed';
+      $('#webhookUrl').value = hook?.url ?? '';
+      $('#webhookEditNote').hidden = !hook;
+      $('#webhookFormError').hidden = true;
+      modal.showModal();
+      $('#webhookUrl').focus();
+    }
+    $('#newWebhookBtn').addEventListener('click', () => openModal());
+
+    $('#webhookForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorBox = $('#webhookFormError');
+      const body = { event: $('#webhookEvent').value.trim(), url: $('#webhookUrl').value.trim() };
+      let validUrl = false;
+      try { validUrl = ['http:', 'https:'].includes(new URL(body.url).protocol); } catch { /* invalid */ }
+      if (!body.event || !validUrl) {
+        errorBox.textContent = !body.event ? 'Event is required.' : 'Enter a full http(s):// URL.';
+        errorBox.hidden = false;
+        return;
+      }
+      await withBusy($('#webhookSubmit'), 'Saving…', async () => {
+        try {
+          // No update endpoint: create the new webhook first, then remove the old
+          // one, so a failure never leaves you with neither.
+          await api('/webhooks', { method: 'POST', body });
+          if (editing) await api(`/webhooks/${editing.id}`, { method: 'DELETE' });
+          modal.close();
+          toast(editing ? 'Webhook updated' : 'Webhook created');
+          load();
+        } catch (err) {
+          errorBox.textContent = err.message;
+          errorBox.hidden = false;
+        }
+      });
+    });
+
+    load();
+  }
+
+  // --- Boot ------------------------------------------------------------------
+
+  setupDialogs();
+  const pages = { upload: initUpload, products: initProducts, webhooks: initWebhooks };
+  pages[document.body.dataset.page]?.();
+})();

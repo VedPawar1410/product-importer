@@ -58,6 +58,7 @@ celerybeat.pid
 
 # Temporary files
 *.csv
+!frontend/sample-products.csv
 /shared/
 /data/
 tmp/

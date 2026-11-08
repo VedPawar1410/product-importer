@@ -1,58 +1,146 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Product Importer - Upload CSV</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Import · Product Importer</title>
+  <meta name="description" content="Bulk-import product catalogs from CSV with live progress, then manage products and webhooks.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c1b19'/%3E%3Cpath d='M9 12l7-4 7 4v8l-7 4-7-4z M9 12l7 4 7-4 M16 16v8' fill='none' stroke='%23f6f5f1' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..700&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-    <div class="container">
-        <header>
-            <h1>Product Importer</h1>
-            <nav>
-                <a href="/" class="active">Upload CSV</a>
-                <a href="products.html">Products</a>
-                <a href="webhooks.html">Webhooks</a>
-            </nav>
-        </header>
+<body data-page="upload">
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg></span>
+        Product Importer
+      </a>
+      <nav class="nav" aria-label="Main">
+        <a href="/" aria-current="page">Import</a>
+        <a href="/products.html">Products</a>
+        <a href="/webhooks.html">Webhooks</a>
+      </nav>
+      <div class="header-links">
+        <a href="/docs">API docs</a>
+        <a href="https://github.com/VedPawar1410/product-importer">GitHub</a>
+      </div>
+    </div>
+  </header>
 
-        <main>
-            <section class="upload-section">
-                <h2>Upload Product CSV</h2>
-                <p class="instructions">Select a CSV file containing product data to import.</p>
-                
-                <div class="upload-form">
-                    <div class="file-picker-wrapper">
-                        <input type="file" id="csvFile" accept=".csv" />
-                        <label for="csvFile" class="file-label">
-                            <span id="fileName">Choose a CSV file</span>
-                        </label>
-                    </div>
-                    
-                    <button id="uploadBtn" class="btn-primary" disabled>Upload</button>
-                </div>
-
-                <div id="progressSection" class="progress-section hidden">
-                    <div class="progress-bar-container">
-                        <div id="progressBar" class="progress-bar"></div>
-                    </div>
-                    <p id="progressText" class="progress-text">0%</p>
-                </div>
-
-                <div id="statusSection" class="status-section hidden">
-                    <div id="statusMessage" class="status-message"></div>
-                    <div id="statusDetails" class="status-details"></div>
-                </div>
-            </section>
-        </main>
-
-        <footer>
-            <p>&copy; 2025 Product Importer</p>
-        </footer>
+  <main>
+    <div class="page-head reveal">
+      <div>
+        <p class="eyebrow">Bulk import</p>
+        <h1 class="page-title">Import your catalog</h1>
+        <p class="page-sub">Drop a CSV of up to 500,000 products. It's processed in the background in batches of 1,000: new SKUs are added, existing ones are updated.</p>
+      </div>
     </div>
 
-    <script src="/app.js"></script>
+    <div class="upload-grid">
+      <section class="card card-pad reveal reveal-2" aria-label="Upload">
+        <!-- Stage 1: choose a file -->
+        <div id="pickStage">
+          <label class="dropzone" id="dropzone">
+            <input type="file" id="csvFile" accept=".csv,text/csv" aria-label="Choose a CSV file">
+            <span class="drop-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></span>
+            <span class="drop-title">Drop your CSV here</span>
+            <span class="drop-sub">or <a>browse your files</a> · .csv, up to 500k rows</span>
+          </label>
+
+          <div id="fileChip" class="file-chip" hidden style="margin-top: 16px">
+            <span class="file-icon">CSV</span>
+            <div class="file-meta">
+              <div class="file-name" id="fileName"></div>
+              <div class="file-size" id="fileSize"></div>
+            </div>
+            <button type="button" class="icon-btn" id="clearFileBtn" aria-label="Remove file">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+
+          <div class="upload-actions">
+            <button type="button" class="btn btn-primary" id="uploadBtn" disabled>
+              Start import
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Stage 2: live progress -->
+        <div id="progressStage" hidden>
+          <div class="progress-head">
+            <div class="file-meta">
+              <span class="file-icon">CSV</span>
+              <div style="min-width: 0">
+                <div class="file-name" id="pFileName"></div>
+                <div class="file-size" id="pFileSize"></div>
+              </div>
+            </div>
+            <span id="statusPill" class="pill pill-muted" role="status">Uploading</span>
+          </div>
+
+          <div class="progress-body">
+            <div class="ring" id="ring">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="track" cx="60" cy="60" r="52"/>
+                <circle class="bar" id="ringBar" cx="60" cy="60" r="52"/>
+              </svg>
+              <div class="ring-label">
+                <div class="pct"><span id="pct">0</span><small>%</small></div>
+                <div class="sub" id="ringSub">uploading</div>
+              </div>
+            </div>
+            <div class="stat-grid">
+              <div class="stat"><div class="stat-label">Imported</div><div class="stat-value success" id="statOk">0</div></div>
+              <div class="stat"><div class="stat-label">Failed</div><div class="stat-value" id="statFailed">0</div></div>
+              <div class="stat"><div class="stat-label">Total rows</div><div class="stat-value" id="statTotal">–</div></div>
+              <div class="stat"><div class="stat-label">Rows / sec</div><div class="stat-value" id="statRate">–</div></div>
+              <div class="stat"><div class="stat-label">Elapsed</div><div class="stat-value" id="statElapsed">0s</div></div>
+              <div class="stat"><div class="stat-label">Time left</div><div class="stat-value" id="statEta">–</div></div>
+            </div>
+          </div>
+
+          <div id="resultBanner" class="result-banner" hidden>
+            <p id="resultText"></p>
+            <div class="result-actions" id="resultActions"></div>
+          </div>
+          <p class="wake-hint" id="wakeHint" hidden>The free server sleeps when idle, so the first request can take up to a minute.</p>
+        </div>
+      </section>
+
+      <aside class="card card-pad reveal reveal-3" aria-label="CSV format">
+        <h3>CSV format</h3>
+        <p class="modal-text" style="font-size: 14px">The first row is the header; column order doesn't matter.</p>
+        <ul class="format-list">
+          <li><code>sku</code><span class="req yes">required · unique, ignores case</span></li>
+          <li><code>name</code><span class="req yes">required</span></li>
+          <li><code>description</code><span class="req">optional</span></li>
+          <li><code>price</code><span class="req">optional · number</span></li>
+          <li><code>active</code><span class="req">optional · true / false</span></li>
+        </ul>
+        <ul class="format-notes">
+          <li>Importing a SKU that already exists updates it; if a file repeats a SKU, the last row wins.</li>
+          <li>Invalid rows are skipped and counted, never silently dropped.</li>
+        </ul>
+        <a class="btn btn-secondary" href="sample-products.csv" download style="width: 100%">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></svg>
+          Download sample CSV
+        </a>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span>FastAPI · Celery · Redis · Postgres</span>
+      <a href="https://github.com/VedPawar1410/product-importer">Source on GitHub</a>
+    </div>
+  </footer>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <script src="app.js"></script>
 </body>
 </html>
-
