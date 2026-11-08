@@ -4,6 +4,7 @@ import http.server
 import json
 import os
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -118,6 +119,13 @@ def test_bulk_delete_respects_filters(client):
 # --- Webhooks ------------------------------------------------------------------
 
 
+@dataclass
+class Receiver:
+    url: str
+    received: list
+    status: int = 200  # HTTP status the receiver answers with; tests can change it
+
+
 @pytest.fixture
 def webhook_receiver():
     """A throwaway local HTTP server that records the JSON bodies POSTed to it."""
@@ -126,7 +134,7 @@ def webhook_receiver():
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
             received.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-            self.send_response(200)
+            self.send_response(receiver.status)
             self.end_headers()
 
         def log_message(self, *args):
@@ -134,28 +142,112 @@ def webhook_receiver():
 
     server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    yield f"http://127.0.0.1:{server.server_port}/hook", received
+    receiver = Receiver(url=f"http://127.0.0.1:{server.server_port}/hook", received=received)
+    yield receiver
     server.shutdown()
 
 
+def create_hook(client, url, event="import.completed") -> dict:
+    r = client.post("/webhooks", json={"event": event, "url": url})
+    assert r.status_code == 201
+    return r.json()
+
+
 def test_webhook_fires_when_import_completes(client, webhook_receiver):
-    url, received = webhook_receiver
-    assert client.post("/webhooks", json={"event": "import.completed", "url": url}).status_code == 201
+    create_hook(client, webhook_receiver.url)
 
     status = upload(client, HEADER + "W1,webhook,,1,true\n")
 
-    assert received == [
+    assert webhook_receiver.received == [
         {"event": "import.completed", "data": {"task_id": status["task_id"], "processed_rows": 1}}
     ]
     assert len(client.get("/webhooks").json()) == 1  # importing doesn't create junk webhook rows
 
 
 def test_webhook_test_endpoint_and_delete(client, webhook_receiver):
-    url, received = webhook_receiver
-    hook = client.post("/webhooks", json={"event": "ping", "url": url}).json()
+    hook = create_hook(client, webhook_receiver.url, event="ping")
 
     assert client.post("/webhooks/test/ping").status_code == 202
-    assert received == [{"event": "ping", "data": {"hello": "world"}}]
+    assert webhook_receiver.received == [{"event": "ping", "data": {"hello": "world"}}]
 
     assert client.delete(f"/webhooks/{hook['id']}").status_code == 204
     assert client.get("/webhooks").json() == []
+
+
+# --- Delivery log ------------------------------------------------------------
+
+
+def test_successful_delivery_is_logged(client, webhook_receiver):
+    hook = create_hook(client, webhook_receiver.url)
+    upload(client, HEADER + "L1,log,,1,true\n")
+
+    [delivery] = client.get(f"/webhooks/{hook['id']}/deliveries").json()
+    assert delivery["success"] is True
+    assert delivery["status_code"] == 200
+    assert delivery["response_ms"] > 0
+    assert delivery["attempt"] == 1 and delivery["event"] == "import.completed"
+
+    listed = client.get("/webhooks").json()[0]
+    assert listed["last_delivery"]["id"] == delivery["id"]
+
+
+def test_server_errors_are_retried_up_to_three_attempts(client, webhook_receiver, monkeypatch):
+    from app.core.celery_app import celery_app
+
+    # With eager propagation on, Celery re-raises the Retry signal instead of
+    # running the retry inline; off, eager apply() performs the retries itself.
+    monkeypatch.setattr(celery_app.conf, "task_eager_propagates", False)
+    webhook_receiver.status = 500
+    hook = create_hook(client, webhook_receiver.url, event="ping")
+
+    client.post("/webhooks/test/ping")  # background path; eager Celery runs the retries inline
+
+    deliveries = client.get(f"/webhooks/{hook['id']}/deliveries").json()
+    assert [d["attempt"] for d in deliveries] == [3, 2, 1]  # newest first
+    assert all(not d["success"] and d["status_code"] == 500 for d in deliveries)
+    assert len(webhook_receiver.received) == 3
+
+
+def test_client_errors_are_not_retried(client, webhook_receiver):
+    webhook_receiver.status = 404
+    hook = create_hook(client, webhook_receiver.url, event="ping")
+
+    client.post("/webhooks/test/ping")
+
+    [delivery] = client.get(f"/webhooks/{hook['id']}/deliveries").json()
+    assert delivery["status_code"] == 404 and delivery["error"].startswith("HTTP 404")
+
+
+def test_test_button_returns_the_real_result(client, webhook_receiver):
+    hook = create_hook(client, webhook_receiver.url)
+
+    r = client.post(f"/webhooks/{hook['id']}/test")
+
+    assert r.status_code == 200
+    assert r.json()["success"] is True and r.json()["status_code"] == 200
+    assert webhook_receiver.received[0]["data"]["test"] is True
+    assert client.post("/webhooks/999999/test").status_code == 404
+
+
+def test_unreachable_url_is_logged_as_failure(client):
+    hook = create_hook(client, "http://127.0.0.1:9/hook")  # port 9: nothing listens
+
+    result = client.post(f"/webhooks/{hook['id']}/test").json()
+
+    assert result["success"] is False
+    assert result["status_code"] is None
+    assert "Connection" in result["error"]
+
+
+def test_deleting_a_webhook_removes_its_delivery_log(client, webhook_receiver):
+    from sqlalchemy import text
+
+    from app.core.database import engine
+
+    hook = create_hook(client, webhook_receiver.url)
+    client.post(f"/webhooks/{hook['id']}/test")
+    client.delete(f"/webhooks/{hook['id']}")
+
+    assert client.get(f"/webhooks/{hook['id']}/deliveries").status_code == 404
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM webhook_deliveries")).scalar() == 0

@@ -75,4 +75,4 @@ def clean_tables(client):
     from app.core.database import engine
 
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE products, webhooks RESTART IDENTITY"))
+        conn.execute(text("TRUNCATE products, webhooks, webhook_deliveries RESTART IDENTITY"))
